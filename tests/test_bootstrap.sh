@@ -7,18 +7,29 @@ BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "=== Host Utility Bootstrapping & Integration Test ==="
 
-# Helper: Direct Utility Check (Zero Eval)
 check_required_utility() {
     local util="$1"
     case "$util" in
         ar)
-            command -v ar >/dev/null 2>&1 || command -v dpkg-deb >/dev/null 2>&1
+            if command -v dpkg-deb >/dev/null 2>&1 && dpkg-deb --version >/dev/null 2>&1; then
+                return 0
+            fi
+            if command -v ar >/dev/null 2>&1 && ar --version >/dev/null 2>&1; then
+                return 0
+            fi
+            if [ -x /usr/bin/ar ] && /usr/bin/ar --version >/dev/null 2>&1; then
+                return 0
+            fi
+            if [ -x /bin/ar ] && /bin/ar --version >/dev/null 2>&1; then
+                return 0
+            fi
+            return 1
             ;;
         xz)
             command -v unxz >/dev/null 2>&1 || command -v xz >/dev/null 2>&1 || tar --help 2>&1 | grep -q xz
             ;;
         tar)
-            command -v tar >/dev/null 2>&1
+            command -v tar >/dev/null 2>&1 && tar --version >/dev/null 2>&1 || command -v tar >/dev/null 2>&1
             ;;
         *)
             command -v "$util" >/dev/null 2>&1

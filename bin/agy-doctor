@@ -1,8 +1,18 @@
 #!/bin/sh
 # Antigravity CLI Acode Doctor & Health Suite
+# Developer: TG Habib (https://github.com/The-habib)
+# Repository: https://github.com/The-habib/antigravity-acode
 # Usage: agy-doctor
 
 set -u
+
+if [ "${1:-}" = "--about" ]; then
+    echo "Antigravity for Acode Terminal"
+    echo "Community runtime & installation bridge for Acode Alpine Linux"
+    echo "Developer: TG Habib (https://github.com/The-habib)"
+    echo "Repository: https://github.com/The-habib/antigravity-acode"
+    exit 0
+fi
 
 BASE_DIR="${HOME}/.antigravity-acode"
 LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
@@ -12,7 +22,8 @@ LOCAL_BIN="${HOME}/.local/bin"
 AGY_LAUNCHER="${LOCAL_BIN}/agy"
 MANIFEST_FILE="${BASE_DIR}/manifest.json"
 
-echo "Antigravity Acode Doctor"
+echo "Antigravity for Acode Doctor"
+echo "Built by TG Habib (github.com/The-habib)"
 echo "------------------------"
 
 FAIL_COUNT=0

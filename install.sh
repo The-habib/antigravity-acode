@@ -6,6 +6,9 @@
 
 set -eu
 
+# Ensure standard binary search path includes Alpine binary locations
+export PATH="/usr/bin:/bin:${PATH:-}"
+
 BASE_DIR="${HOME}/.antigravity-acode"
 BIN_DIR="${BASE_DIR}/bin"
 GLIBC_DIR="${BASE_DIR}/glibc"
@@ -18,7 +21,11 @@ GLIBC_DEB_URL="https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.36-9+deb1
 GLIBC_DEB_SHA512="1b36aa891f6865fcacabe884527a931a46569a54913c9e6eb08062becd3fbe3a99355e473b2e795c64d038fbbbc31e881bd05f2c7b06276cc501df3a06d9a94d"
 
 echo "========================================================="
-echo "  Google Antigravity CLI for Acode Alpine Linux Setup   "
+echo "                ANTIGRAVITY FOR ACODE                    "
+echo "           Alpine Terminal Runtime Bridge                "
+echo "                                                         "
+echo "                Built by TG Habib                        "
+echo "               github.com/The-habib                      "
 echo "========================================================="
 echo ""
 
@@ -51,18 +58,30 @@ fetch_url() {
     fi
 }
 
-# Helper: Host Utility Detection (without eval)
+# Helper: Robust Host Utility Detection (Zero Eval)
 check_required_utility() {
     local util="$1"
     case "$util" in
         ar)
-            command -v ar >/dev/null 2>&1 || command -v dpkg-deb >/dev/null 2>&1
+            if command -v dpkg-deb >/dev/null 2>&1 && dpkg-deb --version >/dev/null 2>&1; then
+                return 0
+            fi
+            if command -v ar >/dev/null 2>&1 && ar --version >/dev/null 2>&1; then
+                return 0
+            fi
+            if [ -x /usr/bin/ar ] && /usr/bin/ar --version >/dev/null 2>&1; then
+                return 0
+            fi
+            if [ -x /bin/ar ] && /bin/ar --version >/dev/null 2>&1; then
+                return 0
+            fi
+            return 1
             ;;
         xz)
             command -v unxz >/dev/null 2>&1 || command -v xz >/dev/null 2>&1 || tar --help 2>&1 | grep -q xz
             ;;
         tar)
-            command -v tar >/dev/null 2>&1
+            command -v tar >/dev/null 2>&1 && tar --version >/dev/null 2>&1 || command -v tar >/dev/null 2>&1
             ;;
         *)
             command -v "$util" >/dev/null 2>&1
@@ -79,20 +98,23 @@ bootstrap_pkg() {
         return 0
     fi
 
-    echo "[BOOTSTRAP] Utility '$util_name' is required to extract system packages."
+    echo "[BOOTSTRAP] Utility '$util_name' is required for Debian package extraction."
     if command -v apk >/dev/null 2>&1; then
         echo "[BOOTSTRAP] Automatically installing Alpine package: $pkg_name..."
         if apk add --no-cache "$pkg_name"; then
+            hash -r 2>/dev/null || true
+            export PATH="/usr/bin:/bin:${PATH}"
             if check_required_utility "$util_name"; then
-                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
+                echo "✓ Alpine package '$pkg_name' installed successfully ($util_name verified)."
                 return 0
             fi
         fi
-        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
+        echo "Fatal Error: Installed Alpine package '$pkg_name', but utility '$util_name' could not be verified." >&2
+        echo "Manual Fix: Run 'apk add --no-cache $pkg_name' and re-run installer." >&2
         exit 1
     else
         echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
-        echo "Please manually install package '$pkg_name' (e.g., apk add $pkg_name)." >&2
+        echo "Manual Fix: Install package '$pkg_name' (e.g. apk add $pkg_name)." >&2
         exit 1
     fi
 }
@@ -170,7 +192,7 @@ validate_arm64_elf() {
 }
 
 # 0. Host Utility Audit & Bootstrapping
-echo "[0/7] Auditing required host utilities..."
+echo "[0/7] Auditing Alpine host dependencies..."
 bootstrap_pkg "ar" "binutils"
 bootstrap_pkg "xz" "xz"
 bootstrap_pkg "tar" "tar"
@@ -207,7 +229,7 @@ rm -f "$TEST_FILE" 2>/dev/null || true
 echo "✓ Home directory execution verified."
 
 # 3. Dynamic Upstream Release Discovery & Manifest Validation
-echo "[3/7] Discovering current official Google Antigravity CLI release..."
+echo "[3/7] Discovering official Google Antigravity release..."
 STAGING_DIR="${BASE_DIR}/staging_$$"
 mkdir -m 700 -p "$STAGING_DIR"
 
@@ -259,7 +281,7 @@ fi
 echo "✓ Upstream release manifest validated (Version: $UPSTREAM_VERSION)"
 
 # 4. Download & Mandatory Integrity Verification
-echo "[4/7] Downloading official Antigravity binary package..."
+echo "[4/7] Downloading and verifying Antigravity CLI..."
 AGY_ARCHIVE="${STAGING_DIR}/agy.tar.gz"
 fetch_url "$UPSTREAM_URL" "$AGY_ARCHIVE"
 verify_sha512 "$AGY_ARCHIVE" "$UPSTREAM_SHA512"
@@ -283,11 +305,22 @@ verify_sha512 "$GLIBC_DEB" "$GLIBC_DEB_SHA512"
 mkdir -p "${STAGING_DIR}/deb_extracted"
 if command -v dpkg-deb >/dev/null 2>&1; then
     dpkg-deb -x "$GLIBC_DEB" "${STAGING_DIR}/deb_extracted"
-elif command -v ar >/dev/null 2>&1; then
-    (cd "$STAGING_DIR" && ar x libc6.deb && tar -xf data.tar.xz -C "${STAGING_DIR}/deb_extracted")
 else
-    echo "Fatal Error: Neither dpkg-deb nor ar is available to extract $GLIBC_DEB." >&2
-    exit 1
+    AR_CMD=""
+    if command -v ar >/dev/null 2>&1 && ar --version >/dev/null 2>&1; then
+        AR_CMD="ar"
+    elif [ -x /usr/bin/ar ]; then
+        AR_CMD="/usr/bin/ar"
+    elif [ -x /bin/ar ]; then
+        AR_CMD="/bin/ar"
+    fi
+
+    if [ -n "$AR_CMD" ]; then
+        (cd "$STAGING_DIR" && "$AR_CMD" x libc6.deb && tar -xf data.tar.xz -C "${STAGING_DIR}/deb_extracted")
+    else
+        echo "Fatal Error: Neither dpkg-deb nor ar is available to extract $GLIBC_DEB." >&2
+        exit 1
+    fi
 fi
 
 SRC_LIB=""
@@ -328,12 +361,13 @@ EOF
 echo "✓ Dynamic glibc runtime prepared."
 
 # 6. Real Launcher Generation & Mandatory Management Script Installation
-echo "[6/7] Generating 'agy' launcher & management tools..."
+echo "[6/7] Generating launcher & management tools..."
 AGY_LAUNCHER="${LOCAL_BIN}/agy"
 
 cat <<'LAUNCHER_EOF' > "$AGY_LAUNCHER"
 #!/bin/sh
 # Real Google Antigravity CLI Launcher for Acode Alpine Terminal
+# Developer: TG Habib (https://github.com/The-habib)
 
 BASE_DIR="${HOME}/.antigravity-acode"
 LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
@@ -421,11 +455,21 @@ echo "Verifying installation with 'agy --version'..."
 if "$AGY_LAUNCHER" --version; then
     echo ""
     echo "========================================================="
-    echo "  [SUCCESS] Antigravity CLI Installed Successfully!     "
+    echo "                ANTIGRAVITY FOR ACODE                    "
+    echo "                INSTALLATION COMPLETE                    "
     echo "========================================================="
     echo ""
-    
-    # Check parent shell PATH state
+    echo "    Built by TG Habib (github.com/The-habib)             "
+    echo ""
+    echo "    Antigravity Version : $UPSTREAM_VERSION"
+    echo "    Architecture        : $TARGET_ARCH"
+    echo "    Runtime             : Isolated glibc 2.36"
+    echo ""
+    echo "    ✓ Binary integrity verified (SHA-512)"
+    echo "    ✓ Isolated glibc runtime prepared"
+    echo "    ✓ Launcher installed (~/.local/bin/agy)"
+    echo "    ✓ Management tools ready (agy-setup, agy-doctor, agy-update)"
+    echo ""
     case ":${PATH}:" in
         *:"${LOCAL_BIN}":*)
             echo "✓ $LOCAL_BIN is active in your PATH."
@@ -447,6 +491,7 @@ if "$AGY_LAUNCHER" --version; then
             ;;
     esac
     echo ""
+    echo "========================================================="
     exit 0
 else
     echo "Fatal Error: Verification 'agy --version' failed." >&2

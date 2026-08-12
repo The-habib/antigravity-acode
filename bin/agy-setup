@@ -1,8 +1,18 @@
 #!/bin/sh
 # Antigravity CLI for Acode Alpine - Interactive Setup & First-Run Manager
+# Developer: TG Habib (https://github.com/The-habib)
+# Repository: https://github.com/The-habib/antigravity-acode
 # Usage: agy-setup
 
 set -u
+
+if [ "${1:-}" = "--about" ]; then
+    echo "Antigravity for Acode Terminal"
+    echo "Community runtime & installation bridge for Acode Alpine Linux"
+    echo "Developer: TG Habib (https://github.com/The-habib)"
+    echo "Repository: https://github.com/The-habib/antigravity-acode"
+    exit 0
+fi
 
 BASE_DIR="${HOME}/.antigravity-acode"
 LOCAL_BIN="${HOME}/.local/bin"
@@ -11,7 +21,11 @@ AGY_LAUNCHER="${LOCAL_BIN}/agy"
 export PATH="${LOCAL_BIN}:${PATH}"
 
 echo "========================================================="
-echo "        Antigravity CLI for Acode - First-Run Setup     "
+echo "                ANTIGRAVITY FOR ACODE                    "
+echo "                First-Run Setup & Auth                   "
+echo "                                                         "
+echo "                Built by TG Habib                        "
+echo "               github.com/The-habib                      "
 echo "========================================================="
 echo ""
 
@@ -58,34 +72,31 @@ else
 fi
 
 if [ "$NEED_AUTH" -eq 1 ]; then
-    echo "[AUTH] Google authentication is required."
-    echo "Launching official Google Antigravity authentication..."
-    echo "Follow the prompt below to sign in with your Google account:"
+    echo "[AUTH] Google AI Authentication required."
+    echo "Launching official Antigravity CLI to complete sign-in..."
     echo "---------------------------------------------------------"
-    
-    # Launch real official CLI authentication
-    "$AGY_LAUNCHER"
-    
+    "$AGY_LAUNCHER" || true
     echo "---------------------------------------------------------"
-    echo "Re-checking authentication and model availability..."
-    MODEL_CHECK="$( "$AGY_LAUNCHER" models 2>&1 || true )"
-fi
-
-if echo "$MODEL_CHECK" | grep -q -i "gemini"; then
+else
     echo "[PASS] Authentication verified."
     echo "[PASS] Model access confirmed."
-    echo ""
-    echo "Available Models:"
-    echo "$MODEL_CHECK" | grep -v "^⠋" | grep -v "^⠙" | head -n 6
+fi
+echo ""
+
+echo "[4/4] Verifying available Google AI models..."
+if "$AGY_LAUNCHER" models 2>/dev/null; then
     echo ""
     echo "========================================================="
-    echo "                    SETUP COMPLETE                      "
+    echo "                    SETUP COMPLETE                       "
     echo "========================================================="
-    echo "You are ready to use Antigravity!"
+    echo "Antigravity for Acode is ready."
+    echo ""
+    echo "Built by TG Habib (github.com/The-habib)"
     echo "Run 'agy' anytime to start an agent session."
+    echo "========================================================="
     exit 0
 else
-    echo "[WARN] Setup finished, but model access check did not return model list."
-    echo "Run 'agy' directly to complete login or start a turn."
+    echo "Warning: Sign-in process did not finish or network is offline."
+    echo "Run 'agy' directly when ready to log in."
     exit 0
 fi
