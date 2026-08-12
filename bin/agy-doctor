@@ -1,5 +1,5 @@
 #!/bin/sh
-# Antigravity CLI Acode Doctor Diagnostic Tool
+# Antigravity CLI Acode Doctor & Diagnostic Suite
 # Usage: agy-doctor
 
 set -u
@@ -14,61 +14,125 @@ MANIFEST_FILE="${BASE_DIR}/manifest.json"
 echo "Antigravity Acode Doctor"
 echo "------------------------"
 
-# 1. Platform & OS
-OS_NAME="Alpine Linux"
+FAIL_COUNT=0
+WARN_COUNT=0
+
+report() {
+    local status="$1"
+    local label="$2"
+    local detail="${3:-}"
+    case "$status" in
+        PASS) printf "%-24s [\033[32mPASS\033[0m] %s\n" "$label" "$detail" ;;
+        WARN) printf "%-24s [\033[33mWARN\033[0m] %s\n" "$label" "$detail"; WARN_COUNT=$((WARN_COUNT + 1)) ;;
+        FAIL) printf "%-24s [\033[31mFAIL\033[0m] %-s\n" "$label" "$detail"; FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
+    esac
+}
+
+# 1. Platform & Architecture
+OS_RELEASE="Alpine Linux"
 if [ -f /etc/alpine-release ]; then
-    OS_NAME="Alpine Linux ($(cat /etc/alpine-release))"
+    OS_RELEASE="Alpine Linux ($(cat /etc/alpine-release))"
 fi
-printf "%-16s %s\n" "Platform:" "$OS_NAME"
+report PASS "Platform:" "$OS_RELEASE"
 
-# 2. Architecture
 ARCH="$(uname -m 2>/dev/null || echo "unknown")"
-printf "%-16s %s\n" "Architecture:" "$ARCH"
+if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    report PASS "Architecture:" "$ARCH (64-bit ARM)"
+else
+    report FAIL "Architecture:" "Unsupported architecture: $ARCH"
+fi
 
-# 3. Libc
+# 2. Libc & System Environment
 LIBC="musl"
 if [ -f /lib/libc.so.6 ] || [ -f /lib/aarch64-linux-gnu/libc.so.6 ]; then
     LIBC="glibc"
 fi
-printf "%-16s %s\n" "libc:" "$LIBC"
+report PASS "System libc:" "$LIBC"
 
-# 4. Installed Antigravity Version
-VER="Not Installed"
-if [ -x "$AGY_LAUNCHER" ]; then
-    VER="$("$AGY_LAUNCHER" --version 2>/dev/null || echo "Error")"
-fi
-printf "%-16s %s\n" "Antigravity:" "$VER"
-
-# 5. Runtime
-printf "%-16s %s\n" "Runtime:" "isolated glibc"
-
-# 6. Loader Status
-LOADER_STATUS="FAIL"
+# 3. Isolated Dynamic Loader & Glibc Version
+GLIBC_VER="Unknown"
 if [ -f "$LOADER" ] && [ -x "$LOADER" ]; then
-    LOADER_STATUS="OK"
+    LOADER_VER_OUT=""
+    if command -v proot >/dev/null 2>&1; then
+        LOADER_VER_OUT="$(proot "$LOADER" --version 2>&1 | head -n 1 || true)"
+    else
+        LOADER_VER_OUT="$("$LOADER" --version 2>&1 | head -n 1 || true)"
+    fi
+    if echo "$LOADER_VER_OUT" | grep -q -i "glibc"; then
+        GLIBC_VER="$(echo "$LOADER_VER_OUT" | sed -n 's/.*release version \([0-9.]*\).*/\1/p')"
+        if [ -z "$GLIBC_VER" ]; then
+            GLIBC_VER="$LOADER_VER_OUT"
+        fi
+        report PASS "Glibc Loader:" "ld-linux-aarch64.so.1 (GLIBC $GLIBC_VER)"
+    else
+        report PASS "Glibc Loader:" "ld-linux-aarch64.so.1 present"
+    fi
+else
+    report FAIL "Glibc Loader:" "Missing isolated loader at $LOADER"
 fi
-printf "%-16s %s\n" "Loader:" "$LOADER_STATUS"
 
-# 7. Binary Status
-BIN_STATUS="FAIL"
-if [ -f "$BINARY" ]; then
-    BIN_STATUS="OK"
+# 4. Required Runtime Shared Libraries
+REQUIRED_LIBS="libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 libresolv.so.2 librt.so.1"
+MISSING_LIBS=""
+for lib in $REQUIRED_LIBS; do
+    if [ ! -f "$LIB_DIR/$lib" ]; then
+        MISSING_LIBS="$MISSING_LIBS $lib"
+    fi
+done
+
+if [ -z "$MISSING_LIBS" ]; then
+    report PASS "Runtime Libraries:" "All required core shared libraries present ($LIB_DIR)"
+else
+    report FAIL "Runtime Libraries:" "Missing shared libraries:$MISSING_LIBS"
 fi
-printf "%-16s %s\n" "Binary:" "$BIN_STATUS"
 
-# 8. PATH Status
-PATH_STATUS="WARN (Not in PATH)"
+# 5. Antigravity Binary Presence & Executability
+if [ -f "$BINARY" ] && [ -x "$BINARY" ]; then
+    ELF_ARCH="aarch64"
+    if command -v readelf >/dev/null 2>&1; then
+        if readelf -h "$BINARY" 2>/dev/null | grep -q -iE "(aarch64|arm64)"; then
+            report PASS "Binary Integrity:" "ARM64 ELF executable ($BINARY)"
+        else
+            report FAIL "Binary Integrity:" "Invalid ELF machine header"
+        fi
+    elif command -v file >/dev/null 2>&1; then
+        if file "$BINARY" 2>/dev/null | grep -q -iE "(aarch64|arm64)"; then
+            report PASS "Binary Integrity:" "ARM64 ELF executable ($BINARY)"
+        else
+            report FAIL "Binary Integrity:" "File is not ARM64 ELF"
+        fi
+    else
+        report PASS "Binary Integrity:" "Executable present ($BINARY)"
+    fi
+else
+    report FAIL "Binary Integrity:" "Missing executable binary at $BINARY"
+fi
+
+# 6. Launcher & Execution Test
+if [ -x "$AGY_LAUNCHER" ]; then
+    EXEC_VER=""
+    EXEC_VER="$("$AGY_LAUNCHER" --version 2>/dev/null || echo "FAIL")"
+    if [ "$EXEC_VER" != "FAIL" ] && echo "$EXEC_VER" | grep -q -E "^[0-9]+\.[0-9]+"; then
+        report PASS "AGY Execution:" "agy --version returned $EXEC_VER"
+    else
+        report FAIL "AGY Execution:" "Execution failed. Output: $EXEC_VER"
+    fi
+else
+    report FAIL "AGY Launcher:" "Missing executable launcher at $AGY_LAUNCHER"
+fi
+
+# 7. PATH Configuration
 case ":$PATH:" in
-    *:"$HOME/.local/bin":*) PATH_STATUS="OK" ;;
+    *:"$HOME/.local/bin":*) report PASS "PATH Check:" "$HOME/.local/bin present in PATH" ;;
+    *) report WARN "PATH Check:" "$HOME/.local/bin is NOT in PATH. Export: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
-printf "%-16s %s\n" "PATH:" "$PATH_STATUS"
 
 # Overall Result
 echo "------------------------"
-if [ "$LOADER_STATUS" = "OK" ] && [ "$BIN_STATUS" = "OK" ] && [ "$VER" != "Error" ] && [ "$VER" != "Not Installed" ]; then
-    echo "Result:         READY"
+if [ "$FAIL_COUNT" -eq 0 ]; then
+    echo "Result:         READY (0 Failures, $WARN_COUNT Warnings)"
     exit 0
 else
-    echo "Result:         FAILED / INCOMPLETE"
+    echo "Result:         FAILED ($FAIL_COUNT Failures, $WARN_COUNT Warnings)"
     exit 1
 fi

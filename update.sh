@@ -1,5 +1,5 @@
 #!/bin/sh
-# Antigravity CLI for Acode Alpine Linux - Updater & Rollback Engine
+# Antigravity CLI for Acode Alpine Linux - Hardened Updater & Rollback Engine
 # Usage: update.sh or agy-update
 
 set -eu
@@ -16,6 +16,63 @@ echo "      Antigravity CLI Upstream Updater & Rollback       "
 echo "========================================================="
 echo ""
 
+fetch_url() {
+    local url="$1"
+    local output_file="$2"
+
+    case "$url" in
+        https://*) ;;
+        *)
+            echo "Fatal Security Error: Download URL ($url) is not HTTPS. Download rejected." >&2
+            exit 1
+            ;;
+    esac
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$output_file" "$url"
+    elif command -v wget >/dev/null 2>&1; then
+        wget --https-only -q -O "$output_file" "$url"
+    else
+        echo "Fatal Error: Neither curl nor wget is available for HTTPS download." >&2
+        exit 1
+    fi
+}
+
+compute_sha512() {
+    local file="$1"
+    if command -v sha512sum >/dev/null 2>&1; then
+        sha512sum "$file" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 512 "$file" | cut -d' ' -f1
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha512 "$file" | sed 's/.*= //'
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import hashlib, sys; print(hashlib.sha512(open(sys.argv[1],'rb').read()).hexdigest())" "$file"
+    else
+        echo "NO_SHA512_ENGINE"
+    fi
+}
+
+verify_sha512() {
+    local file="$1"
+    local expected_hash="$2"
+    local calc_hash
+    calc_hash="$(compute_sha512 "$file")"
+
+    if [ "$calc_hash" = "NO_SHA512_ENGINE" ]; then
+        echo "Fatal Security Error: Mandatory SHA-512 engine unavailable for update verification." >&2
+        exit 1
+    fi
+
+    if [ -z "$expected_hash" ] || [ "$calc_hash" != "$expected_hash" ]; then
+        echo "Security Error: Checksum mismatch on update payload! Aborting update." >&2
+        echo "Expected: $expected_hash" >&2
+        echo "Calculated: $calc_hash" >&2
+        exit 1
+    fi
+    echo "✓ Package SHA-512 checksum verified successfully."
+}
+
 if [ ! -f "${BIN_DIR}/antigravity" ]; then
     echo "Error: Antigravity is not currently installed. Run install.sh first." >&2
     exit 1
@@ -28,21 +85,20 @@ fi
 echo "Current Installed Version: $CURRENT_VER"
 
 echo "Querying Google Antigravity release server..."
-FETCH_JSON=""
-if command -v curl >/dev/null 2>&1; then
-    FETCH_JSON="$(curl -fsSL -m 15 "$MANIFEST_URL" || true)"
-elif command -v wget >/dev/null 2>&1; then
-    FETCH_JSON="$(wget -q -T 15 -O - "$MANIFEST_URL" || true)"
-fi
+STAGING_DIR="${BASE_DIR}/update_staging_$$"
+mkdir -p "$STAGING_DIR"
 
-if [ -z "$FETCH_JSON" ]; then
-    echo "Error: Unable to connect to Google release server." >&2
-    exit 1
-fi
+cleanup_staging() {
+    rm -rf "$STAGING_DIR" 2>/dev/null || true
+}
+trap cleanup_staging EXIT
+
+MANIFEST_TMP="${STAGING_DIR}/manifest.json"
+fetch_url "$MANIFEST_URL" "$MANIFEST_TMP"
 
 parse_json() {
     local key="$1"
-    echo "$FETCH_JSON" | sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+    sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$MANIFEST_TMP"
 }
 
 LATEST_VER="$(parse_json "version")"
@@ -57,33 +113,14 @@ if [ "$CURRENT_VER" = "$LATEST_VER" ] && [ "${1:-}" != "--force" ]; then
 fi
 
 echo "Staging upstream update..."
-STAGING_DIR="${BASE_DIR}/update_staging_$$"
-mkdir -p "$STAGING_DIR"
-
-cleanup_staging() {
-    rm -rf "$STAGING_DIR" 2>/dev/null || true
-}
-trap cleanup_staging EXIT
-
 UPDATE_ARCHIVE="${STAGING_DIR}/agy_update.tar.gz"
-if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$UPDATE_ARCHIVE" "$LATEST_URL"
-else
-    wget -q -O "$UPDATE_ARCHIVE" "$LATEST_URL"
-fi
-
-if command -v sha512sum >/dev/null 2>&1; then
-    CALC_SHA="$(sha512sum "$UPDATE_ARCHIVE" | cut -d' ' -f1)"
-    if [ "$CALC_SHA" != "$LATEST_SHA512" ]; then
-        echo "Security Error: Checksum mismatch on update payload! Aborting update." >&2
-        exit 1
-    fi
-fi
+fetch_url "$LATEST_URL" "$UPDATE_ARCHIVE"
+verify_sha512 "$UPDATE_ARCHIVE" "$LATEST_SHA512"
 
 tar -xzf "$UPDATE_ARCHIVE" -C "$STAGING_DIR" antigravity
 chmod +x "$STAGING_DIR/antigravity"
 
-# Test candidate binary before replacing
+# Test candidate binary in staging before replacing current working binary
 LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
 LIB_DIR="${BASE_DIR}/glibc"
 
@@ -100,7 +137,7 @@ if ! echo "$TEST_OUT" | grep -q -E "^[0-9]+\.[0-9]+"; then
     exit 1
 fi
 
-# Atomic Backup & Replacement (Rollback capability)
+# Atomic Backup & Replacement
 echo "Backup current binary..."
 cp "${BIN_DIR}/antigravity" "${BIN_DIR}/antigravity.bak"
 
@@ -125,6 +162,7 @@ EOF
 else
     echo "Error: Updated binary failed live launcher check. Initiating ROLLBACK..." >&2
     cp "${BIN_DIR}/antigravity.bak" "${BIN_DIR}/antigravity"
+    rm -f "${BIN_DIR}/antigravity.bak" 2>/dev/null || true
     echo "✓ Rollback complete. Preserved working binary version $CURRENT_VER."
     exit 1
 fi

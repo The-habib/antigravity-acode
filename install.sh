@@ -1,5 +1,5 @@
 #!/bin/sh
-# Antigravity CLI for Acode Alpine Linux - Installer
+# Antigravity CLI for Acode Alpine Linux - Production Hardened Installer
 # Repository: https://github.com/The-habib/antigravity-acode
 # Usage: curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/install.sh | sh
 
@@ -13,12 +13,72 @@ LOCAL_BIN="${HOME}/.local/bin"
 MANIFEST_FILE="${BASE_DIR}/manifest.json"
 
 MANIFEST_URL="https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json"
-GLIBC_DEB_URL="http://ftp.us.debian.org/debian/pool/main/g/glibc/libc6_2.36-9+deb12u14_arm64.deb"
+GLIBC_DEB_URL="https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.36-9+deb12u14_arm64.deb"
 
 echo "========================================================="
 echo "  Google Antigravity CLI for Acode Alpine Linux Setup   "
 echo "========================================================="
 echo ""
+
+# Helper: Strict HTTPS download
+fetch_url() {
+    local url="$1"
+    local output_file="$2"
+
+    case "$url" in
+        https://*) ;;
+        *)
+            echo "Fatal Security Error: Download URL ($url) is not HTTPS. Download rejected." >&2
+            exit 1
+            ;;
+    esac
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$output_file" "$url"
+    elif command -v wget >/dev/null 2>&1; then
+        wget --https-only -q -O "$output_file" "$url"
+    else
+        echo "Fatal Error: Neither curl nor wget is available for HTTPS download." >&2
+        exit 1
+    fi
+}
+
+# Helper: Mandatory SHA-512 Hash Computation Engine
+compute_sha512() {
+    local file="$1"
+    if command -v sha512sum >/dev/null 2>&1; then
+        sha512sum "$file" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 512 "$file" | cut -d' ' -f1
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha512 "$file" | sed 's/.*= //'
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import hashlib, sys; print(hashlib.sha512(open(sys.argv[1],'rb').read()).hexdigest())" "$file"
+    else
+        echo "NO_SHA512_ENGINE"
+    fi
+}
+
+verify_sha512() {
+    local file="$1"
+    local expected_hash="$2"
+    local calc_hash
+    calc_hash="$(compute_sha512 "$file")"
+
+    if [ "$calc_hash" = "NO_SHA512_ENGINE" ]; then
+        echo "Fatal Security Error: Mandatory SHA-512 engine (sha512sum, shasum, openssl, or python3) unavailable." >&2
+        echo "Installation aborted to prevent unverified code execution." >&2
+        exit 1
+    fi
+
+    if [ -z "$expected_hash" ] || [ "$calc_hash" != "$expected_hash" ]; then
+        echo "Fatal Security Error: Checksum verification failed for $file!" >&2
+        echo "Expected: $expected_hash" >&2
+        echo "Calculated: $calc_hash" >&2
+        exit 1
+    fi
+    echo "✓ Package SHA-512 checksum verified successfully."
+}
 
 # 1. Architecture Detection
 echo "[1/7] Detecting system architecture..."
@@ -60,23 +120,12 @@ cleanup_staging() {
 }
 trap cleanup_staging EXIT
 
-FETCH_JSON=""
-if command -v curl >/dev/null 2>&1; then
-    FETCH_JSON="$(curl -fsSL -m 15 "$MANIFEST_URL" || true)"
-elif command -v wget >/dev/null 2>&1; then
-    FETCH_JSON="$(wget -q -T 15 -O - "$MANIFEST_URL" || true)"
-fi
+MANIFEST_TMP="${STAGING_DIR}/manifest.json"
+fetch_url "$MANIFEST_URL" "$MANIFEST_TMP"
 
-if [ -z "$FETCH_JSON" ]; then
-    echo "Fatal Error: Could not reach Google release server ($MANIFEST_URL)." >&2
-    echo "Please check your network and TLS certificate store." >&2
-    exit 1
-fi
-
-# POSIX json value extraction
 parse_json() {
     local key="$1"
-    echo "$FETCH_JSON" | sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+    sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$MANIFEST_TMP"
 }
 
 UPSTREAM_VERSION="$(parse_json "version")"
@@ -88,27 +137,21 @@ if [ -z "$UPSTREAM_URL" ] || [ -z "$UPSTREAM_SHA512" ]; then
     exit 1
 fi
 
+case "$UPSTREAM_URL" in
+    https://*) ;;
+    *)
+        echo "Fatal Security Error: Upstream release URL ($UPSTREAM_URL) is not HTTPS. Download rejected." >&2
+        exit 1
+        ;;
+esac
+
 echo "✓ Latest official release version: ${UPSTREAM_VERSION:-1.x.x}"
 
-# 4. Download & Integrity Verification
+# 4. Download & Mandatory Integrity Verification
 echo "[4/7] Downloading official Antigravity binary package..."
 AGY_ARCHIVE="${STAGING_DIR}/agy.tar.gz"
-if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$AGY_ARCHIVE" "$UPSTREAM_URL"
-else
-    wget -q -O "$AGY_ARCHIVE" "$UPSTREAM_URL"
-fi
-
-if command -v sha512sum >/dev/null 2>&1; then
-    CALC_SHA="$(sha512sum "$AGY_ARCHIVE" | cut -d' ' -f1)"
-    if [ "$CALC_SHA" != "$UPSTREAM_SHA512" ]; then
-        echo "Security Error: Checksum mismatch for downloaded Antigravity archive!" >&2
-        echo "Expected: $UPSTREAM_SHA512" >&2
-        echo "Actual:   $CALC_SHA" >&2
-        exit 1
-    fi
-    echo "✓ Package SHA-512 checksum verified successfully."
-fi
+fetch_url "$UPSTREAM_URL" "$AGY_ARCHIVE"
+verify_sha512 "$AGY_ARCHIVE" "$UPSTREAM_SHA512"
 
 echo "Extracting official binary..."
 tar -xzf "$AGY_ARCHIVE" -C "$STAGING_DIR" antigravity
@@ -118,11 +161,7 @@ chmod +x "${BIN_DIR}/antigravity"
 # 5. Glibc Runtime Acquisition & Extraction
 echo "[5/7] Preparing isolated glibc dynamic runtime..."
 GLIBC_DEB="${STAGING_DIR}/libc6.deb"
-if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$GLIBC_DEB" "$GLIBC_DEB_URL" || curl -fsSL -o "$GLIBC_DEB" "http://ftp.us.debian.org/debian/pool/main/g/glibc/libc6_2.36-9+deb12u14_arm64.deb"
-else
-    wget -q -O "$GLIBC_DEB" "$GLIBC_DEB_URL"
-fi
+fetch_url "$GLIBC_DEB_URL" "$GLIBC_DEB"
 
 mkdir -p "${STAGING_DIR}/deb_extracted"
 if command -v dpkg-deb >/dev/null 2>&1; then
