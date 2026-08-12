@@ -307,13 +307,16 @@ LAUNCHER_EOF
 
 chmod +x "$AGY_LAUNCHER"
 
-# Install management scripts if running from git checkout
+# Install management scripts
 SCRIPT_SOURCE_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "")"
 if [ -n "$SCRIPT_SOURCE_DIR" ] && [ -f "${SCRIPT_SOURCE_DIR}/bin/agy-doctor" ]; then
     cp "${SCRIPT_SOURCE_DIR}/bin/agy-doctor" "${LOCAL_BIN}/agy-doctor" 2>/dev/null || true
     cp "${SCRIPT_SOURCE_DIR}/bin/agy-update" "${LOCAL_BIN}/agy-update" 2>/dev/null || true
-    chmod +x "${LOCAL_BIN}/agy-doctor" "${LOCAL_BIN}/agy-update" 2>/dev/null || true
+else
+    fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-doctor" "${LOCAL_BIN}/agy-doctor"
+    fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-update" "${LOCAL_BIN}/agy-update"
 fi
+chmod +x "${LOCAL_BIN}/agy-doctor" "${LOCAL_BIN}/agy-update" 2>/dev/null || true
 
 # 7. PATH Configuration
 echo "[7/7] Configuring shell PATH persistence..."
