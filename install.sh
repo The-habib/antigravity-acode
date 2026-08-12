@@ -1,5 +1,5 @@
 #!/bin/sh
-# Antigravity CLI for Acode Alpine Linux - Production Hardened Installer
+# Antigravity CLI for Acode Alpine Linux - Production Release Hardened Installer
 # Repository: https://github.com/The-habib/antigravity-acode
 # Usage: curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/install.sh | sh
 
@@ -14,6 +14,7 @@ MANIFEST_FILE="${BASE_DIR}/manifest.json"
 
 MANIFEST_URL="https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_arm64.json"
 GLIBC_DEB_URL="https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.36-9+deb12u14_arm64.deb"
+GLIBC_DEB_SHA512="1b36aa891f6865fcacabe884527a931a46569a54913c9e6eb08062becd3fbe3a99355e473b2e795c64d038fbbbc31e881bd05f2c7b06276cc501df3a06d9a94d"
 
 echo "========================================================="
 echo "  Google Antigravity CLI for Acode Alpine Linux Setup   "
@@ -41,6 +42,11 @@ fetch_url() {
         echo "Fatal Error: Neither curl nor wget is available for HTTPS download." >&2
         exit 1
     fi
+
+    if [ ! -s "$output_file" ]; then
+        echo "Fatal Error: Downloaded file from $url is empty." >&2
+        exit 1
+    fi
 }
 
 # Helper: Mandatory SHA-512 Hash Computation Engine
@@ -62,6 +68,21 @@ compute_sha512() {
 verify_sha512() {
     local file="$1"
     local expected_hash="$2"
+
+    # Validate expected hash is exactly 128 hex chars
+    case "$expected_hash" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]*)
+            if [ "${#expected_hash}" -ne 128 ]; then
+                echo "Fatal Security Error: Expected SHA-512 hash length (${#expected_hash}) is invalid (must be 128 hex chars)." >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Fatal Security Error: Malformed SHA-512 hash format: '$expected_hash'." >&2
+            exit 1
+            ;;
+    esac
+
     local calc_hash
     calc_hash="$(compute_sha512 "$file")"
 
@@ -71,13 +92,34 @@ verify_sha512() {
         exit 1
     fi
 
-    if [ -z "$expected_hash" ] || [ "$calc_hash" != "$expected_hash" ]; then
+    if [ "$calc_hash" != "$expected_hash" ]; then
         echo "Fatal Security Error: Checksum verification failed for $file!" >&2
         echo "Expected: $expected_hash" >&2
         echo "Calculated: $calc_hash" >&2
         exit 1
     fi
-    echo "✓ Package SHA-512 checksum verified successfully."
+    echo "✓ SHA-512 checksum verified: $(echo "$calc_hash" | cut -c1-16)..."
+}
+
+validate_arm64_elf() {
+    local binary_file="$1"
+    if [ ! -f "$binary_file" ] || [ ! -x "$binary_file" ]; then
+        echo "Fatal Error: Binary $binary_file is missing or not executable." >&2
+        return 1
+    fi
+
+    if command -v readelf >/dev/null 2>&1; then
+        if ! readelf -h "$binary_file" 2>/dev/null | grep -q -iE "(aarch64|arm64)"; then
+            echo "Fatal Error: $binary_file is not an AArch64 ELF binary." >&2
+            return 1
+        fi
+    elif command -v file >/dev/null 2>&1; then
+        if ! file "$binary_file" 2>/dev/null | grep -q -iE "(aarch64|arm64)"; then
+            echo "Fatal Error: $binary_file is not an AArch64 ELF binary." >&2
+            return 1
+        fi
+    fi
+    return 0
 }
 
 # 1. Architecture Detection
@@ -110,7 +152,7 @@ fi
 rm -f "$TEST_FILE" 2>/dev/null || true
 echo "✓ Home directory execution verified."
 
-# 3. Dynamic Upstream Release Discovery
+# 3. Dynamic Upstream Release Discovery & Manifest Validation
 echo "[3/7] Discovering current official Google Antigravity CLI release..."
 STAGING_DIR="${BASE_DIR}/staging_$$"
 mkdir -p "$STAGING_DIR"
@@ -132,12 +174,22 @@ UPSTREAM_VERSION="$(parse_json "version")"
 UPSTREAM_URL="$(parse_json "url")"
 UPSTREAM_SHA512="$(parse_json "sha512")"
 
-if [ -z "$UPSTREAM_URL" ] || [ -z "$UPSTREAM_SHA512" ]; then
+if [ -z "$UPSTREAM_VERSION" ] || [ -z "$UPSTREAM_URL" ] || [ -z "$UPSTREAM_SHA512" ]; then
     echo "Fatal Error: Failed to parse release manifest from Google server." >&2
     exit 1
 fi
 
+# Strict Manifest Field Validation
+case "$UPSTREAM_VERSION" in
+    [0-9]*.[0-9]*) ;;
+    *)
+        echo "Fatal Error: Invalid version format in manifest: '$UPSTREAM_VERSION'." >&2
+        exit 1
+        ;;
+esac
+
 case "$UPSTREAM_URL" in
+    https://storage.googleapis.com/*|https://antigravity-public.*) ;;
     https://*) ;;
     *)
         echo "Fatal Security Error: Upstream release URL ($UPSTREAM_URL) is not HTTPS. Download rejected." >&2
@@ -145,7 +197,12 @@ case "$UPSTREAM_URL" in
         ;;
 esac
 
-echo "✓ Latest official release version: ${UPSTREAM_VERSION:-1.x.x}"
+if [ "${#UPSTREAM_SHA512}" -ne 128 ]; then
+    echo "Fatal Security Error: Manifest SHA-512 is not 128 hexadecimal characters (len=${#UPSTREAM_SHA512})." >&2
+    exit 1
+fi
+
+echo "✓ Upstream release manifest validated (Version: $UPSTREAM_VERSION)"
 
 # 4. Download & Mandatory Integrity Verification
 echo "[4/7] Downloading official Antigravity binary package..."
@@ -155,13 +212,19 @@ verify_sha512 "$AGY_ARCHIVE" "$UPSTREAM_SHA512"
 
 echo "Extracting official binary..."
 tar -xzf "$AGY_ARCHIVE" -C "$STAGING_DIR" antigravity
-cp "$STAGING_DIR/antigravity" "${BIN_DIR}/antigravity"
-chmod +x "${BIN_DIR}/antigravity"
+VALIDATED_BIN="$STAGING_DIR/antigravity"
+chmod +x "$VALIDATED_BIN"
 
-# 5. Glibc Runtime Acquisition & Extraction
+if ! validate_arm64_elf "$VALIDATED_BIN"; then
+    echo "Fatal Error: Extracted binary failed ARM64 ELF validation." >&2
+    exit 1
+fi
+
+# 5. Glibc Runtime Acquisition & Verification
 echo "[5/7] Preparing isolated glibc dynamic runtime..."
 GLIBC_DEB="${STAGING_DIR}/libc6.deb"
 fetch_url "$GLIBC_DEB_URL" "$GLIBC_DEB"
+verify_sha512 "$GLIBC_DEB" "$GLIBC_DEB_SHA512"
 
 mkdir -p "${STAGING_DIR}/deb_extracted"
 if command -v dpkg-deb >/dev/null 2>&1; then
@@ -190,6 +253,10 @@ chmod +x "$GLIBC_DIR"/ld-*.so* 2>/dev/null || true
  ln -sf libpthread.so.0 libpthread.so 2>/dev/null || true; \
  ln -sf libresolv.so.2 libresolv.so 2>/dev/null || true; \
  ln -sf librt.so.1 librt.so 2>/dev/null || true)
+
+# Atomic binary deployment to destination
+cp "$VALIDATED_BIN" "${BIN_DIR}/antigravity"
+chmod +x "${BIN_DIR}/antigravity"
 
 # Write manifest
 cat <<EOF > "$MANIFEST_FILE"

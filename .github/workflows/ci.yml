@@ -21,6 +21,7 @@ jobs:
           sh -n bin/agy-doctor
           sh -n bin/agy-update
           sh -n tests/test_security.sh
+          sh -n tests/test_adversarial.sh
           sh -n tests/run_tests.sh
 
       - name: Assert No Large Binaries Committed

@@ -36,6 +36,11 @@ fetch_url() {
         echo "Fatal Error: Neither curl nor wget is available for HTTPS download." >&2
         exit 1
     fi
+
+    if [ ! -s "$output_file" ]; then
+        echo "Fatal Error: Downloaded file from $url is empty." >&2
+        exit 1
+    fi
 }
 
 compute_sha512() {
@@ -56,6 +61,20 @@ compute_sha512() {
 verify_sha512() {
     local file="$1"
     local expected_hash="$2"
+
+    case "$expected_hash" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]*)
+            if [ "${#expected_hash}" -ne 128 ]; then
+                echo "Fatal Security Error: Expected SHA-512 hash length (${#expected_hash}) is invalid." >&2
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Fatal Security Error: Malformed SHA-512 hash format: '$expected_hash'." >&2
+            exit 1
+            ;;
+    esac
+
     local calc_hash
     calc_hash="$(compute_sha512 "$file")"
 
@@ -64,7 +83,7 @@ verify_sha512() {
         exit 1
     fi
 
-    if [ -z "$expected_hash" ] || [ "$calc_hash" != "$expected_hash" ]; then
+    if [ "$calc_hash" != "$expected_hash" ]; then
         echo "Security Error: Checksum mismatch on update payload! Aborting update." >&2
         echo "Expected: $expected_hash" >&2
         echo "Calculated: $calc_hash" >&2
@@ -118,7 +137,8 @@ fetch_url "$LATEST_URL" "$UPDATE_ARCHIVE"
 verify_sha512 "$UPDATE_ARCHIVE" "$LATEST_SHA512"
 
 tar -xzf "$UPDATE_ARCHIVE" -C "$STAGING_DIR" antigravity
-chmod +x "$STAGING_DIR/antigravity"
+VALIDATED_BIN="$STAGING_DIR/antigravity"
+chmod +x "$VALIDATED_BIN"
 
 # Test candidate binary in staging before replacing current working binary
 LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
@@ -126,9 +146,9 @@ LIB_DIR="${BASE_DIR}/glibc"
 
 TEST_OUT=""
 if command -v proot >/dev/null 2>&1; then
-    TEST_OUT="$(proot "$LOADER" --library-path "$LIB_DIR" "$STAGING_DIR/antigravity" --version 2>&1 || true)"
+    TEST_OUT="$(proot "$LOADER" --library-path "$LIB_DIR" "$VALIDATED_BIN" --version 2>&1 || true)"
 else
-    TEST_OUT="$("$LOADER" --library-path "$LIB_DIR" "$STAGING_DIR/antigravity" --version 2>&1 || true)"
+    TEST_OUT="$("$LOADER" --library-path "$LIB_DIR" "$VALIDATED_BIN" --version 2>&1 || true)"
 fi
 
 if ! echo "$TEST_OUT" | grep -q -E "^[0-9]+\.[0-9]+"; then
@@ -142,7 +162,7 @@ echo "Backup current binary..."
 cp "${BIN_DIR}/antigravity" "${BIN_DIR}/antigravity.bak"
 
 echo "Applying update..."
-cp "$STAGING_DIR/antigravity" "${BIN_DIR}/antigravity"
+cp "$VALIDATED_BIN" "${BIN_DIR}/antigravity"
 
 # Test live installation
 if "$AGY_LAUNCHER" --version >/dev/null 2>&1; then
