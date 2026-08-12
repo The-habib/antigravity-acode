@@ -35,7 +35,7 @@ fetch_url() {
     esac
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --proto '=https' --tlsv1.2 -o "$output_file" "$url"
+        curl -fsSL -4 --tlsv1.2 -o "$output_file" "$url" 2>/dev/null || curl -fsSL --tlsv1.2 -o "$output_file" "$url"
     elif command -v wget >/dev/null 2>&1; then
         wget --https-only -q -O "$output_file" "$url"
     else
