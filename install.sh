@@ -43,8 +43,8 @@ fetch_url() {
     esac
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL -4 --proto '=https' --tlsv1.2 -o "$output_file" "$url" 2>/dev/null || \
-        curl -fsSL --proto '=https' --tlsv1.2 -o "$output_file" "$url"
+        curl -fsSL -4 --proto '=https' --tlsv1.2 --connect-timeout 8 -o "$output_file" "$url" 2>/dev/null || \
+        curl -fsSL --proto '=https' --tlsv1.2 --connect-timeout 15 -o "$output_file" "$url"
     elif command -v wget >/dev/null 2>&1; then
         wget --https-only -q -O "$output_file" "$url"
     else
@@ -303,24 +303,22 @@ fetch_url "$GLIBC_DEB_URL" "$GLIBC_DEB"
 verify_sha512 "$GLIBC_DEB" "$GLIBC_DEB_SHA512"
 
 mkdir -p "${STAGING_DIR}/deb_extracted"
-if command -v dpkg-deb >/dev/null 2>&1; then
+AR_CMD=""
+if command -v ar >/dev/null 2>&1 && ar --version >/dev/null 2>&1; then
+    AR_CMD="ar"
+elif [ -x /usr/bin/ar ]; then
+    AR_CMD="/usr/bin/ar"
+elif [ -x /bin/ar ]; then
+    AR_CMD="/bin/ar"
+fi
+
+if [ -n "$AR_CMD" ]; then
+    (cd "$STAGING_DIR" && "$AR_CMD" x libc6.deb && tar -xf data.tar.xz -C deb_extracted)
+elif command -v dpkg-deb >/dev/null 2>&1; then
     dpkg-deb -x "$GLIBC_DEB" "${STAGING_DIR}/deb_extracted"
 else
-    AR_CMD=""
-    if command -v ar >/dev/null 2>&1 && ar --version >/dev/null 2>&1; then
-        AR_CMD="ar"
-    elif [ -x /usr/bin/ar ]; then
-        AR_CMD="/usr/bin/ar"
-    elif [ -x /bin/ar ]; then
-        AR_CMD="/bin/ar"
-    fi
-
-    if [ -n "$AR_CMD" ]; then
-        (cd "$STAGING_DIR" && "$AR_CMD" x libc6.deb && tar -xf data.tar.xz -C "${STAGING_DIR}/deb_extracted")
-    else
-        echo "Fatal Error: Neither dpkg-deb nor ar is available to extract $GLIBC_DEB." >&2
-        exit 1
-    fi
+    echo "Fatal Error: Neither ar nor dpkg-deb is available to extract $GLIBC_DEB." >&2
+    exit 1
 fi
 
 SRC_LIB=""
