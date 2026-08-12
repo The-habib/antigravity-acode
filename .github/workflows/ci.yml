@@ -1,0 +1,52 @@
+name: CI & Integrity Checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Shell Syntax Validation
+        run: |
+          sh -n install.sh
+          sh -n update.sh
+          sh -n uninstall.sh
+          sh -n bin/agy-doctor
+          sh -n bin/agy-update
+          sh -n tests/run_tests.sh
+
+      - name: Assert No Large Binaries Committed
+        run: |
+          echo "Checking for accidental large binary commits..."
+          LARGE_FILES=$(find . -type f -size +1M ! -path "./.git/*")
+          if [ -n "$LARGE_FILES" ]; then
+            echo "Error: Found large binary files committed to repository:"
+            echo "$LARGE_FILES"
+            exit 1
+          fi
+          echo "✓ No large binaries found in repository."
+
+      - name: Assert Repository Structure
+        run: |
+          test -f README.md
+          test -f install.sh
+          test -f update.sh
+          test -f uninstall.sh
+          test -f VERSION
+          test -f LICENSE
+          test -f .gitignore
+          test -f bin/agy-doctor
+          test -f bin/agy-update
+          echo "✓ Repository structure verified."
+
+      - name: Run Unit Tests
+        run: |
+          chmod +x tests/run_tests.sh tests/*.sh
+          ./tests/run_tests.sh

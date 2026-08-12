@@ -1,0 +1,74 @@
+#!/bin/sh
+# Antigravity CLI Acode Doctor Diagnostic Tool
+# Usage: agy-doctor
+
+set -u
+
+BASE_DIR="${HOME}/.antigravity-acode"
+LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
+LIB_DIR="${BASE_DIR}/glibc"
+BINARY="${BASE_DIR}/bin/antigravity"
+AGY_LAUNCHER="${HOME}/.local/bin/agy"
+MANIFEST_FILE="${BASE_DIR}/manifest.json"
+
+echo "Antigravity Acode Doctor"
+echo "------------------------"
+
+# 1. Platform & OS
+OS_NAME="Alpine Linux"
+if [ -f /etc/alpine-release ]; then
+    OS_NAME="Alpine Linux ($(cat /etc/alpine-release))"
+fi
+printf "%-16s %s\n" "Platform:" "$OS_NAME"
+
+# 2. Architecture
+ARCH="$(uname -m 2>/dev/null || echo "unknown")"
+printf "%-16s %s\n" "Architecture:" "$ARCH"
+
+# 3. Libc
+LIBC="musl"
+if [ -f /lib/libc.so.6 ] || [ -f /lib/aarch64-linux-gnu/libc.so.6 ]; then
+    LIBC="glibc"
+fi
+printf "%-16s %s\n" "libc:" "$LIBC"
+
+# 4. Installed Antigravity Version
+VER="Not Installed"
+if [ -x "$AGY_LAUNCHER" ]; then
+    VER="$("$AGY_LAUNCHER" --version 2>/dev/null || echo "Error")"
+fi
+printf "%-16s %s\n" "Antigravity:" "$VER"
+
+# 5. Runtime
+printf "%-16s %s\n" "Runtime:" "isolated glibc"
+
+# 6. Loader Status
+LOADER_STATUS="FAIL"
+if [ -f "$LOADER" ] && [ -x "$LOADER" ]; then
+    LOADER_STATUS="OK"
+fi
+printf "%-16s %s\n" "Loader:" "$LOADER_STATUS"
+
+# 7. Binary Status
+BIN_STATUS="FAIL"
+if [ -f "$BINARY" ]; then
+    BIN_STATUS="OK"
+fi
+printf "%-16s %s\n" "Binary:" "$BIN_STATUS"
+
+# 8. PATH Status
+PATH_STATUS="WARN (Not in PATH)"
+case ":$PATH:" in
+    *:"$HOME/.local/bin":*) PATH_STATUS="OK" ;;
+esac
+printf "%-16s %s\n" "PATH:" "$PATH_STATUS"
+
+# Overall Result
+echo "------------------------"
+if [ "$LOADER_STATUS" = "OK" ] && [ "$BIN_STATUS" = "OK" ] && [ "$VER" != "Error" ] && [ "$VER" != "Not Installed" ]; then
+    echo "Result:         READY"
+    exit 0
+else
+    echo "Result:         FAILED / INCOMPLETE"
+    exit 1
+fi

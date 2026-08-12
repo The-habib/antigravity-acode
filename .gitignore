@@ -1,0 +1,17 @@
+# Temporary files and archives
+*.tar.gz
+*.tar.xz
+*.deb
+*.tmp
+*.log
+.cache/
+staging/
+
+# Proprietary binaries (NEVER COMMIT)
+antigravity
+agy
+*.so*
+
+# Local test outputs
+test_output/
+tmp/
