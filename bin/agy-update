@@ -29,7 +29,8 @@ fetch_url() {
     esac
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL -4 -o "$output_file" "$url" || curl -fsSL -o "$output_file" "$url"
+        curl -fsSL -4 --proto '=https' --tlsv1.2 -o "$output_file" "$url" 2>/dev/null || \
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$output_file" "$url"
     elif command -v wget >/dev/null 2>&1; then
         wget --https-only -q -O "$output_file" "$url"
     else
@@ -38,7 +39,51 @@ fetch_url() {
     fi
 
     if [ ! -s "$output_file" ]; then
-        echo "Fatal Error: Downloaded file from $url is empty." >&2
+        echo "Fatal Error: Downloaded file from $url is empty or missing." >&2
+        exit 1
+    fi
+}
+
+check_required_utility() {
+    local util="$1"
+    case "$util" in
+        ar)
+            command -v ar >/dev/null 2>&1 || command -v dpkg-deb >/dev/null 2>&1
+            ;;
+        xz)
+            command -v unxz >/dev/null 2>&1 || command -v xz >/dev/null 2>&1 || tar --help 2>&1 | grep -q xz
+            ;;
+        tar)
+            command -v tar >/dev/null 2>&1
+            ;;
+        *)
+            command -v "$util" >/dev/null 2>&1
+            ;;
+    esac
+}
+
+bootstrap_pkg() {
+    local util_name="$1"
+    local pkg_name="$2"
+
+    if check_required_utility "$util_name"; then
+        return 0
+    fi
+
+    echo "[BOOTSTRAP] Utility '$util_name' is required for update processing."
+    if command -v apk >/dev/null 2>&1; then
+        echo "[BOOTSTRAP] Automatically installing Alpine package: $pkg_name..."
+        if apk add --no-cache "$pkg_name"; then
+            if check_required_utility "$util_name"; then
+                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
+                return 0
+            fi
+        fi
+        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
+        exit 1
+    else
+        echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
+        echo "Please manually install package '$pkg_name' (e.g., apk add $pkg_name)." >&2
         exit 1
     fi
 }
@@ -92,34 +137,7 @@ verify_sha512() {
     echo "✓ Package SHA-512 checksum verified successfully."
 }
 
-bootstrap_pkg() {
-    local util_name="$1"
-    local pkg_name="$2"
-    local check_cmd="$3"
-
-    if eval "$check_cmd" >/dev/null 2>&1; then
-        return 0
-    fi
-
-    echo "[BOOTSTRAP] $util_name is required for update processing."
-    if command -v apk >/dev/null 2>&1; then
-        echo "[BOOTSTRAP] Installing Alpine package: $pkg_name..."
-        if apk add --no-cache "$pkg_name" >/dev/null 2>&1 || apk add "$pkg_name"; then
-            if eval "$check_cmd" >/dev/null 2>&1; then
-                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
-                return 0
-            fi
-        fi
-        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
-        exit 1
-    else
-        echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
-        echo "Please manually install '$pkg_name' (e.g., apk add $pkg_name)." >&2
-        exit 1
-    fi
-}
-
-bootstrap_pkg "tar" "tar" "command -v tar"
+bootstrap_pkg "tar" "tar"
 
 if [ ! -f "${BIN_DIR}/antigravity" ]; then
     echo "Error: Antigravity is not currently installed. Run install.sh first." >&2

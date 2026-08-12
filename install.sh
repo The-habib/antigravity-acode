@@ -21,7 +21,7 @@ echo "  Google Antigravity CLI for Acode Alpine Linux Setup   "
 echo "========================================================="
 echo ""
 
-# Helper: Strict HTTPS download
+# Helper: Strict HTTPS & TLS 1.2+ download policy
 fetch_url() {
     local url="$1"
     local output_file="$2"
@@ -35,7 +35,8 @@ fetch_url() {
     esac
 
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL -4 -o "$output_file" "$url" || curl -fsSL -o "$output_file" "$url"
+        curl -fsSL -4 --proto '=https' --tlsv1.2 -o "$output_file" "$url" 2>/dev/null || \
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$output_file" "$url"
     elif command -v wget >/dev/null 2>&1; then
         wget --https-only -q -O "$output_file" "$url"
     else
@@ -44,7 +45,53 @@ fetch_url() {
     fi
 
     if [ ! -s "$output_file" ]; then
-        echo "Fatal Error: Downloaded file from $url is empty." >&2
+        echo "Fatal Error: Downloaded file from $url is empty or missing." >&2
+        exit 1
+    fi
+}
+
+# Helper: Host Utility Detection (without eval)
+check_required_utility() {
+    local util="$1"
+    case "$util" in
+        ar)
+            command -v ar >/dev/null 2>&1 || command -v dpkg-deb >/dev/null 2>&1
+            ;;
+        xz)
+            command -v unxz >/dev/null 2>&1 || command -v xz >/dev/null 2>&1 || tar --help 2>&1 | grep -q xz
+            ;;
+        tar)
+            command -v tar >/dev/null 2>&1
+            ;;
+        *)
+            command -v "$util" >/dev/null 2>&1
+            ;;
+    esac
+}
+
+# Helper: Host Utility Bootstrapper for Minimal Alpine Environments
+bootstrap_pkg() {
+    local util_name="$1"
+    local pkg_name="$2"
+
+    if check_required_utility "$util_name"; then
+        return 0
+    fi
+
+    echo "[BOOTSTRAP] Utility '$util_name' is required to extract system packages."
+    if command -v apk >/dev/null 2>&1; then
+        echo "[BOOTSTRAP] Automatically installing Alpine package: $pkg_name..."
+        if apk add --no-cache "$pkg_name"; then
+            if check_required_utility "$util_name"; then
+                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
+                return 0
+            fi
+        fi
+        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
+        exit 1
+    else
+        echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
+        echo "Please manually install package '$pkg_name' (e.g., apk add $pkg_name)." >&2
         exit 1
     fi
 }
@@ -69,7 +116,6 @@ verify_sha512() {
     local file="$1"
     local expected_hash="$2"
 
-    # Validate expected hash is exactly 128 hex chars
     case "$expected_hash" in
         [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]*)
             if [ "${#expected_hash}" -ne 128 ]; then
@@ -122,39 +168,11 @@ validate_arm64_elf() {
     return 0
 }
 
-# Helper: Host Utility Bootstrapper for Minimal Alpine Environments
-bootstrap_pkg() {
-    local util_name="$1"
-    local pkg_name="$2"
-    local check_cmd="$3"
-
-    if eval "$check_cmd" >/dev/null 2>&1; then
-        return 0
-    fi
-
-    echo "[BOOTSTRAP] $util_name is required to extract system packages."
-    if command -v apk >/dev/null 2>&1; then
-        echo "[BOOTSTRAP] Installing Alpine package: $pkg_name..."
-        if apk add --no-cache "$pkg_name" >/dev/null 2>&1 || apk add "$pkg_name"; then
-            if eval "$check_cmd" >/dev/null 2>&1; then
-                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
-                return 0
-            fi
-        fi
-        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
-        exit 1
-    else
-        echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
-        echo "Please manually install '$pkg_name' (e.g., apk add $pkg_name)." >&2
-        exit 1
-    fi
-}
-
 # 0. Host Utility Audit & Bootstrapping
 echo "[0/7] Auditing required host utilities..."
-bootstrap_pkg "ar" "binutils" "command -v ar || command -v dpkg-deb"
-bootstrap_pkg "xz" "xz" "command -v unxz || command -v xz || tar --help 2>&1 | grep -q xz"
-bootstrap_pkg "tar" "tar" "command -v tar"
+bootstrap_pkg "ar" "binutils"
+bootstrap_pkg "xz" "xz"
+bootstrap_pkg "tar" "tar"
 echo "✓ Required host utilities verified."
 
 # 1. Architecture Detection
@@ -264,8 +282,11 @@ verify_sha512 "$GLIBC_DEB" "$GLIBC_DEB_SHA512"
 mkdir -p "${STAGING_DIR}/deb_extracted"
 if command -v dpkg-deb >/dev/null 2>&1; then
     dpkg-deb -x "$GLIBC_DEB" "${STAGING_DIR}/deb_extracted"
-else
+elif command -v ar >/dev/null 2>&1; then
     (cd "$STAGING_DIR" && ar x libc6.deb && tar -xf data.tar.xz -C "${STAGING_DIR}/deb_extracted")
+else
+    echo "Fatal Error: Neither dpkg-deb nor ar is available to extract $GLIBC_DEB." >&2
+    exit 1
 fi
 
 SRC_LIB=""
@@ -305,8 +326,8 @@ cat <<EOF > "$MANIFEST_FILE"
 EOF
 echo "✓ Dynamic glibc runtime prepared."
 
-# 6. Real Launcher Generation
-echo "[6/7] Generating 'agy' launcher script..."
+# 6. Real Launcher Generation & Mandatory Management Script Installation
+echo "[6/7] Generating 'agy' launcher & management tools..."
 AGY_LAUNCHER="${LOCAL_BIN}/agy"
 
 cat <<'LAUNCHER_EOF' > "$AGY_LAUNCHER"
@@ -342,18 +363,35 @@ LAUNCHER_EOF
 
 chmod +x "$AGY_LAUNCHER"
 
-# Install management scripts
-fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-doctor" "${LOCAL_BIN}/agy-doctor" || true
-fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-update" "${LOCAL_BIN}/agy-update" || true
-fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-setup" "${LOCAL_BIN}/agy-setup" || true
+install_mgmt_script() {
+    local script_name="$1"
+    local dest_path="${LOCAL_BIN}/${script_name}"
+    local src_dir
 
-SCRIPT_SOURCE_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "")"
-if [ -n "$SCRIPT_SOURCE_DIR" ] && [ -f "${SCRIPT_SOURCE_DIR}/bin/agy-doctor" ]; then
-    cp "${SCRIPT_SOURCE_DIR}/bin/agy-doctor" "${LOCAL_BIN}/agy-doctor" 2>/dev/null || true
-    cp "${SCRIPT_SOURCE_DIR}/bin/agy-update" "${LOCAL_BIN}/agy-update" 2>/dev/null || true
-    cp "${SCRIPT_SOURCE_DIR}/bin/agy-setup" "${LOCAL_BIN}/agy-setup" 2>/dev/null || true
-fi
-chmod +x "${LOCAL_BIN}/agy-doctor" "${LOCAL_BIN}/agy-update" "${LOCAL_BIN}/agy-setup" 2>/dev/null || true
+    src_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "")"
+    if [ -n "$src_dir" ] && [ -f "${src_dir}/bin/${script_name}" ]; then
+        cp "${src_dir}/bin/${script_name}" "$dest_path"
+    else
+        fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/${script_name}" "$dest_path"
+    fi
+
+    if [ ! -s "$dest_path" ]; then
+        echo "Fatal Error: Mandatory management script ${script_name} is missing or empty." >&2
+        exit 1
+    fi
+
+    if ! sh -n "$dest_path" 2>/dev/null; then
+        echo "Fatal Error: Downloaded management script ${script_name} failed POSIX syntax check." >&2
+        exit 1
+    fi
+
+    chmod +x "$dest_path"
+    echo "✓ Installed management tool: ${script_name}"
+}
+
+install_mgmt_script "agy-doctor"
+install_mgmt_script "agy-update"
+install_mgmt_script "agy-setup"
 
 # 7. PATH Configuration
 echo "[7/7] Configuring shell PATH persistence..."
