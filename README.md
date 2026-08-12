@@ -1,50 +1,69 @@
-# Antigravity CLI for Acode Alpine
+# Antigravity for Acode Terminal
 
-[![Architecture](https://img.shields.io/badge/Architecture-ARM64-blue.svg)](https://github.com/The-habib/antigravity-acode)
-[![Target OS](https://img.shields.io/badge/OS-Alpine%20Linux%20%28Acode%20PRoot%29-green.svg)](https://acode.app)
+[![Architecture](https://img.shields.io/badge/Architecture-ARM64%20%2F%20aarch64-blue.svg)](https://github.com/The-habib/antigravity-acode)
+[![Target OS](https://img.shields.io/badge/Target%20OS-Alpine%20Linux%20%28Acode%20PRoot%29-green.svg)](https://acode.app)
+[![Developer](https://img.shields.io/badge/Developer-TG%20Habib-orange.svg)](https://github.com/The-habib)
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![CI Status](https://github.com/The-habib/antigravity-acode/actions/workflows/ci.yml/badge.svg)](https://github.com/The-habib/antigravity-acode/actions)
 
-> **A production-quality open-source installer and isolated compatibility layer enabling Google's official Antigravity CLI (`agy`) to run natively inside Acode's built-in Alpine Linux terminal on Android ARM64.**
+> **A standalone, open-source compatibility layer and automated installer enabling Google's official Antigravity CLI (`agy`) to run natively inside Acode's built-in Alpine Linux terminal on supported ARM64 Android devices.**
 
 ---
 
-## ONE-COMMAND INSTALLATION
+## Overview
 
-If your fresh Alpine terminal does not have `curl` installed yet, run:
+**Antigravity for Acode Terminal** (`antigravity-acode`) bridges the compatibility gap between Alpine Linux (`musl` libc) and Google's official Antigravity CLI binary (which targets `glibc` on Linux ARM64).
+
+Created by **[TG Habib](https://github.com/The-habib)**, this project provides a reproducible, zero-root user-space runtime environment. It installs a dedicated, isolated `glibc 2.36` compatibility layer into `$HOME/.antigravity-acode/glibc` without modifying Acode's APK, installing Termux, requiring Android root access, or relying on external Acode plugins.
+
+---
+
+## Key Features
+
+- **Zero-Root & Zero-Plugin**: Runs 100% in user space directly inside Acode's built-in Alpine Linux terminal.
+- **Official Google Antigravity CLI**: Invokes the authentic, un-modified upstream Antigravity ARM64 binary (`agy`).
+- **Automated Host Self-Bootstrapping**: Automatically audits and installs required Alpine host utilities (`binutils`/`ar`, `xz`, `tar`) via `apk` if missing.
+- **Cryptographic Security**: Enforces mandatory SHA-512 checksum verification on all downloaded binaries and packages.
+- **Strict HTTPS & TLS 1.2+**: All network requests strictly enforce HTTPS with `--proto '=https' --tlsv1.2`.
+- **First-Run Onboarding (`agy-setup`)**: Interactive setup helper that audits runtime health, launches Google authentication, and verifies model access.
+- **Health Diagnostics (`agy-doctor`)**: Built-in diagnostic tool to verify ELF headers, glibc loader integrity, PATH setup, and auth state.
+- **Upstream Updater (`agy-update`)**: Automated upstream release checker with atomic staging, candidate testing, and automatic rollback on failure.
+
+---
+
+## One-Command Installation
+
+Open your **Acode Terminal** and run:
+
 ```sh
 apk add curl
-```
-
-Then run the canonical installer:
-```sh
 curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/install.sh | sh
 ```
 
-> **Automatic Host Utility Bootstrapping**: Once `install.sh` starts, it automatically audits and self-bootstraps missing required host tools (such as `binutils`/`ar` and `xz`) via `apk` if needed.
+> **Note on Prerequisites**: Fresh minimal Alpine Linux terminals require `curl` to fetch the installer. Once `install.sh` starts, it automatically audits and self-bootstraps all remaining required host utilities (such as `binutils`/`ar` and `xz`).
 
 ---
 
-## FIRST-RUN & USAGE GUIDE
+## First-Run & Quick Start
 
-### 1. First-Run Setup (`agy-setup`)
-Run the interactive setup helper to verify runtime health and launch Google authentication:
+### 1. Run First-Time Setup & Authentication (`agy-setup`)
 ```sh
 agy-setup
 ```
+This interactive helper verifies your runtime health, launches legitimate Google OAuth sign-in if unauthenticated, and displays available Google AI models upon success.
 
 ### 2. Launch Antigravity CLI (`agy`)
 ```sh
 agy
 ```
 
-### 3. Check Version & Models
+### 3. Check Version & Available Models
 ```sh
 agy --version
 agy models
 ```
 
-### 4. Health Diagnostics (`agy-doctor`)
+### 4. Run System Diagnostics (`agy-doctor`)
 ```sh
 agy-doctor
 ```
@@ -54,82 +73,64 @@ agy-doctor
 agy-update
 ```
 
-### 6. Uninstall
+### 6. Uninstall (`uninstall.sh`)
 ```sh
 curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/uninstall.sh | sh
 ```
 
 ---
 
-## PATH UX & CURRENT SHELL SESSION
-
-Child processes (like `install.sh`) cannot modify their parent shell's active environment variables.
-The installer configures persistent PATH in `~/.profile` and `~/.ashrc` for future terminal windows.
-
-To use `agy` immediately in your **current** terminal session:
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
----
-
-## GOOGLE AUTHENTICATION INFORMATION
-
-- Google's official Antigravity CLI requires interactive OAuth authentication with a Google account.
-- **`antigravity-acode` NEVER bypasses, stores, or automates authentication.**
-- Running `agy` or `agy-setup` presents Google's official sign-in link.
-- Credentials remain managed 100% natively by Google's official binary inside `$HOME/.config/antigravity`.
-
----
-
-## SYSTEM REQUIREMENTS & TECHNICAL CONSTRAINTS
-
-- **Architecture**: Android `aarch64` / `arm64` (ARM 64-bit device)
-- **Environment**: Acode built-in Alpine Linux terminal (`musl` libc)
-- **Root Required**: **NO** (Runs 100% in non-root user space)
-- **Termux Required**: **NO** (Completely standalone inside Acode)
-- **Acode Plugin Required**: **NO** (No plugin or APK modifications)
-- **`/sdcard` Execution**: **NO** (Installs to executable `$HOME/.antigravity-acode/`)
-- **Network Access**: Required for HTTPS installation, upstream updates, and Google AI API operations
-
----
-
-## SECURITY & ARCHITECTURE CONTROLS
+## How It Works (Architecture)
 
 ```
-Android OS (ARM64)
-  ↓
-Acode App Terminal
-  ↓
-Alpine Linux (musl libc)
-  ↓
-Isolated Glibc Runtime (~/.antigravity-acode/glibc)
-  ↓
-Official Google Antigravity CLI binary
-  ↓
-agy
+Acode Terminal (Alpine Linux / musl libc / ARM64)
+    ↓
+`agy` Launcher ($HOME/.local/bin/agy)
+    ↓
+Isolated glibc Loader ($HOME/.antigravity-acode/glibc/ld-linux-aarch64.so.1)
+    ↓
+Official Google Antigravity CLI ($HOME/.antigravity-acode/bin/antigravity)
+    ↓
+Google Gemini / Claude / GPT-OSS Models via TLS API
 ```
 
-- **Mandatory Cryptographic Verification**: Google's binary tarball and Debian's core glibc package are verified against SHA-512 checksums prior to extraction.
-- **Strict HTTPS Download Policy**: All external downloads enforce TLS 1.2+ HTTPS (`https://`). Unencrypted HTTP downloads are rejected.
-- **Staging & Safe Rollback**: `update.sh` stages candidate binaries in private `700` directories, tests candidate execution via glibc, creates atomic backups (`antigravity.bak`), and automatically rolls back if validation fails.
+1. **Host Audit & Self-Bootstrapping**: The installer checks for required host tools (`ar`, `xz`, `tar`). If absent on minimal Alpine installations, it automatically installs `binutils` and `xz` via `apk`.
+2. **Upstream Release Discovery**: Downloads the official release manifest over HTTPS from Google's auto-updater endpoint and validates SHA-512 hashes.
+3. **Isolated Glibc Bridge**: Unpacks Debian `libc6` shared libraries into `$HOME/.antigravity-acode/glibc/` without touching system-level `/lib` or `/usr/lib`.
+4. **Transparent Execution**: The `agy` launcher executes `ld-linux-aarch64.so.1 --library-path $HOME/.antigravity-acode/glibc $HOME/.antigravity-acode/bin/antigravity "$@"`, passing arguments seamlessly to the official binary.
 
 ---
 
-## DOCUMENTATION
+## Security & Verification
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Technical architecture & loader details
-- [SECURITY.md](docs/SECURITY.md) — Security controls & cryptographic integrity rules
-- [INSTALL.md](docs/INSTALL.md) — Installation instructions
-- [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Diagnostic fixes & doctor guide
+- **Mandatory SHA-512 Verification**: Downloads are verified against 128-hex-character SHA-512 cryptographic hashes before execution.
+- **Strict HTTPS Protocol Enforcement**: All downloads explicitly require HTTPS and TLS 1.2+ (`curl --proto '=https' --tlsv1.2`). Unencrypted HTTP fallback is strictly prohibited.
+- **Zero-`eval` Shell Execution**: Utility checks and bootstrapping functions use direct POSIX `case` logic without unsafe `eval` calls.
+- **Isolated Staging**: Downloads and extractions occur inside private staging directories (`mkdir -m 700`).
+- **Fail-Closed Safety**: If any checksum check, binary validation, or management script download fails, installation immediately halts.
 
 ---
 
-## DISCLAIMER & LICENSES
+## System Requirements
 
-- **Installer & Tooling License**: Open-source under the [MIT License](LICENSE).
-- **Google Antigravity CLI**: Proprietary software developed by Google LLC. This repository does NOT contain, distribute, or modify Google's proprietary source code or binaries.
+- **Device Architecture**: 64-bit ARM (`aarch64` / `arm64`).
+- **Application**: [Acode Editor](https://acode.app) with built-in terminal (Alpine Linux environment).
+- **Network**: Active internet connection for initial setup and Google AI model communication.
 
-### Official Links
-- [Google Antigravity Product Page](https://antigravity.google/product/antigravity-cli)
-- [Official Antigravity CLI Installation Documentation](https://antigravity.google/docs/cli/install)
+---
+
+## Developer Credit
+
+- **Developer & Maintainer**: **TG Habib** ([@The-habib](https://github.com/The-habib))
+- **Repository**: [https://github.com/The-habib/antigravity-acode](https://github.com/The-habib/antigravity-acode)
+
+---
+
+## License & Disclaimer
+
+This project is licensed under the [MIT License](LICENSE).
+
+### Disclaimer & Trademarks
+- **Google Antigravity CLI**, **Gemini**, and **Google** are trademarks of Google LLC.
+- **antigravity-acode** is an independent, open-source compatibility layer and installer created by **TG Habib**.
+- This repository is **not affiliated with, sponsored by, or endorsed by Google LLC**.

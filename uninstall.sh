@@ -1,6 +1,8 @@
 #!/bin/sh
 # Antigravity CLI for Acode Alpine Linux - Uninstaller
-# Usage: uninstall.sh or curl -fsSL .../uninstall.sh | sh
+# Developer: TG Habib (https://github.com/The-habib)
+# Repository: https://github.com/The-habib/antigravity-acode
+# Usage: uninstall.sh or curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/uninstall.sh | sh
 
 set -u
 

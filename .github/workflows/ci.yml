@@ -41,6 +41,8 @@ jobs:
       - name: Assert Repository Structure & Executable Modes
         run: |
           test -f README.md
+          test -f CONTRIBUTING.md
+          test -f SECURITY.md
           test -f install.sh
           test -f update.sh
           test -f uninstall.sh

@@ -1,5 +1,6 @@
 #!/bin/sh
 # Antigravity CLI for Acode Alpine Linux - Production Release Hardened Installer
+# Developer: TG Habib (https://github.com/The-habib)
 # Repository: https://github.com/The-habib/antigravity-acode
 # Usage: curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/install.sh | sh
 

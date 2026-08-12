@@ -1,5 +1,7 @@
 #!/bin/sh
 # Antigravity CLI for Acode Alpine Linux - Hardened Updater & Rollback Engine
+# Developer: TG Habib (https://github.com/The-habib)
+# Repository: https://github.com/The-habib/antigravity-acode
 # Usage: update.sh or agy-update
 
 set -eu
