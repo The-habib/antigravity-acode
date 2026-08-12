@@ -65,19 +65,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install POSIX Test Dependencies in Alpine
+      - name: Install Minimal Prerequisites (curl, tar, xz; ar/binutils ABSENT)
         run: |
-          apk add --no-cache curl wget tar coreutils
+          apk add --no-cache curl tar xz coreutils
 
-      - name: Run POSIX Syntax & Security Checks inside Alpine Linux
+      - name: Verify ar is absent initially in minimal Alpine test environment
         run: |
-          sh -n install.sh
-          sh -n update.sh
-          sh -n uninstall.sh
-          sh -n bin/agy-doctor
-          sh -n bin/agy-update
-          sh -n bin/agy-setup
-          sh -n tests/test_security.sh
-          sh -n tests/test_adversarial.sh
-          sh -n tests/test_setup.sh
-          sh -n tests/run_tests.sh
+          if command -v ar >/dev/null 2>&1; then
+            echo "Error: ar should be absent in minimal Alpine container!"
+            exit 1
+          fi
+          echo "✓ Confirmed: ar is absent in minimal Alpine test container."
+
+      - name: Run Master Test Suite inside Alpine Linux Container
+        run: |
+          chmod +x tests/*.sh bin/* install.sh update.sh uninstall.sh
+          ./tests/run_tests.sh
+
+      - name: Execute Full install.sh Self-Bootstrapping Integration Test
+        run: |
+          ./install.sh
+
+      - name: Verify ar was automatically bootstrapped via apk binutils
+        run: |
+          command -v ar
+          echo "✓ Confirmed: ar was automatically bootstrapped by install.sh."
+
+      - name: Execute Idempotent Re-installation Test (when ar exists)
+        run: |
+          ./install.sh
+          echo "✓ Confirmed: Re-installation succeeded when ar exists."

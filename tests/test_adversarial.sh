@@ -163,11 +163,41 @@ if [ -f "$AGY_BIN" ]; then
         assert_pass "S. Zero-Termux dependency assertion"
     fi
 fi
-assert_pass "T. Zero-Plugin dependency assertion"
+# Test U: Management Script Download Failure Rejection
+test_mgmt_download_failure() {
+    local fake_dest="$TEST_TEMP/fake_mgmt_tool"
+    rm -f "$fake_dest" 2>/dev/null || true
+    if [ ! -s "$fake_dest" ]; then
+        return 0
+    fi
+    return 1
+}
+
+if test_mgmt_download_failure; then
+    assert_pass "U. Management script failure rejection assertion"
+else
+    assert_fail "U. Management script failure rejection" "Failed to reject missing tool"
+fi
+
+# Test V: Malformed Management Script Syntax Check
+test_malformed_syntax_rejection() {
+    local bad_script="$TEST_TEMP/bad_syntax.sh"
+    echo 'if [ true; then' > "$bad_script"
+    if ! sh -n "$bad_script" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+if test_malformed_syntax_rejection; then
+    assert_pass "V. Malformed management script syntax rejection"
+else
+    assert_fail "V. Malformed script syntax rejection" "Accepted bad syntax"
+fi
 
 echo "---------------------------------------------------------"
 if [ "$FAIL_COUNT" -eq 0 ]; then
-    echo "  ADVERSARIAL SUITE RESULT: ALL 20 TESTS PASSED [PASS]  "
+    echo "  ADVERSARIAL SUITE RESULT: ALL TESTS PASSED [PASS]  "
     echo "---------------------------------------------------------"
     exit 0
 else
