@@ -1,0 +1,91 @@
+#!/bin/sh
+# Antigravity CLI for Acode Alpine - Interactive Setup & First-Run Manager
+# Usage: agy-setup
+
+set -u
+
+BASE_DIR="${HOME}/.antigravity-acode"
+LOCAL_BIN="${HOME}/.local/bin"
+AGY_LAUNCHER="${LOCAL_BIN}/agy"
+
+export PATH="${LOCAL_BIN}:${PATH}"
+
+echo "========================================================="
+echo "        Antigravity CLI for Acode - First-Run Setup     "
+echo "========================================================="
+echo ""
+
+if [ ! -x "$AGY_LAUNCHER" ]; then
+    echo "Error: Antigravity CLI is not installed. Please run install.sh first:" >&2
+    echo "curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/install.sh | sh" >&2
+    exit 1
+fi
+
+echo "[1/4] Verifying isolated runtime & system health..."
+if [ -x "${LOCAL_BIN}/agy-doctor" ]; then
+    "${LOCAL_BIN}/agy-doctor"
+else
+    LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
+    BINARY="${BASE_DIR}/bin/antigravity"
+    if [ -f "$LOADER" ] && [ -f "$BINARY" ]; then
+        echo "✓ Runtime libraries & loader verified."
+    else
+        echo "Error: Runtime components missing. Please re-run install.sh." >&2
+        exit 1
+    fi
+fi
+echo ""
+
+echo "[2/4] Verifying CLI binary execution..."
+VER="$("$AGY_LAUNCHER" --version 2>/dev/null || echo "FAIL")"
+if [ "$VER" = "FAIL" ]; then
+    echo "Error: Could not execute 'agy --version'." >&2
+    exit 1
+fi
+echo "✓ Antigravity CLI Version: $VER"
+echo ""
+
+echo "[3/4] Checking Google AI Authentication state..."
+MODEL_CHECK="$( "$AGY_LAUNCHER" models 2>&1 || true )"
+
+NEED_AUTH=0
+if echo "$MODEL_CHECK" | grep -q -iE "(sign in|unauthenticated|authenticated|login|credential)"; then
+    NEED_AUTH=1
+elif echo "$MODEL_CHECK" | grep -q -i "gemini"; then
+    NEED_AUTH=0
+else
+    NEED_AUTH=1
+fi
+
+if [ "$NEED_AUTH" -eq 1 ]; then
+    echo "[AUTH] Google authentication is required."
+    echo "Launching official Google Antigravity authentication..."
+    echo "Follow the prompt below to sign in with your Google account:"
+    echo "---------------------------------------------------------"
+    
+    # Launch real official CLI authentication
+    "$AGY_LAUNCHER"
+    
+    echo "---------------------------------------------------------"
+    echo "Re-checking authentication and model availability..."
+    MODEL_CHECK="$( "$AGY_LAUNCHER" models 2>&1 || true )"
+fi
+
+if echo "$MODEL_CHECK" | grep -q -i "gemini"; then
+    echo "[PASS] Authentication verified."
+    echo "[PASS] Model access confirmed."
+    echo ""
+    echo "Available Models:"
+    echo "$MODEL_CHECK" | grep -v "^⠋" | grep -v "^⠙" | head -n 6
+    echo ""
+    echo "========================================================="
+    echo "                    SETUP COMPLETE                      "
+    echo "========================================================="
+    echo "You are ready to use Antigravity!"
+    echo "Run 'agy' anytime to start an agent session."
+    exit 0
+else
+    echo "[WARN] Setup finished, but model access check did not return model list."
+    echo "Run 'agy' directly to complete login or start a turn."
+    exit 0
+fi

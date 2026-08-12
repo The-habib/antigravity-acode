@@ -155,7 +155,7 @@ echo "✓ Home directory execution verified."
 # 3. Dynamic Upstream Release Discovery & Manifest Validation
 echo "[3/7] Discovering current official Google Antigravity CLI release..."
 STAGING_DIR="${BASE_DIR}/staging_$$"
-mkdir -p "$STAGING_DIR"
+mkdir -m 700 -p "$STAGING_DIR"
 
 cleanup_staging() {
     rm -rf "$STAGING_DIR" 2>/dev/null || true
@@ -310,13 +310,15 @@ chmod +x "$AGY_LAUNCHER"
 # Install management scripts
 fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-doctor" "${LOCAL_BIN}/agy-doctor" || true
 fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-update" "${LOCAL_BIN}/agy-update" || true
+fetch_url "https://raw.githubusercontent.com/The-habib/antigravity-acode/main/bin/agy-setup" "${LOCAL_BIN}/agy-setup" || true
 
 SCRIPT_SOURCE_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "")"
 if [ -n "$SCRIPT_SOURCE_DIR" ] && [ -f "${SCRIPT_SOURCE_DIR}/bin/agy-doctor" ]; then
     cp "${SCRIPT_SOURCE_DIR}/bin/agy-doctor" "${LOCAL_BIN}/agy-doctor" 2>/dev/null || true
     cp "${SCRIPT_SOURCE_DIR}/bin/agy-update" "${LOCAL_BIN}/agy-update" 2>/dev/null || true
+    cp "${SCRIPT_SOURCE_DIR}/bin/agy-setup" "${LOCAL_BIN}/agy-setup" 2>/dev/null || true
 fi
-chmod +x "${LOCAL_BIN}/agy-doctor" "${LOCAL_BIN}/agy-update" 2>/dev/null || true
+chmod +x "${LOCAL_BIN}/agy-doctor" "${LOCAL_BIN}/agy-update" "${LOCAL_BIN}/agy-setup" 2>/dev/null || true
 
 # 7. PATH Configuration
 echo "[7/7] Configuring shell PATH persistence..."
@@ -348,11 +350,28 @@ if "$AGY_LAUNCHER" --version; then
     echo "  [SUCCESS] Antigravity CLI Installed Successfully!     "
     echo "========================================================="
     echo ""
-    echo "Run:"
-    echo "    agy"
-    echo ""
-    echo "To diagnose issues:"
-    echo "    agy-doctor"
+    
+    # Check parent shell PATH state
+    case ":${PATH}:" in
+        *:"${LOCAL_BIN}":*)
+            echo "✓ $LOCAL_BIN is active in your PATH."
+            echo ""
+            echo "Quick Start:"
+            echo "    agy          - Launch Antigravity CLI"
+            echo "    agy-setup    - Run first-time setup & authentication"
+            echo "    agy-doctor   - Run health diagnostics"
+            ;;
+        *)
+            echo "NOTE ON CURRENT SHELL SESSION:"
+            echo "Persistent PATH has been saved to ~/.profile & ~/.ashrc for future terminals."
+            echo "To use 'agy' immediately in THIS current shell, run:"
+            echo ""
+            echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+            echo ""
+            echo "Or run setup directly:"
+            echo "    \$HOME/.local/bin/agy-setup"
+            ;;
+    esac
     echo ""
     exit 0
 else

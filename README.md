@@ -5,11 +5,11 @@
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![CI Status](https://github.com/The-habib/antigravity-acode/actions/workflows/ci.yml/badge.svg)](https://github.com/The-habib/antigravity-acode/actions)
 
-> **A production-quality, open-source installer and user-space compatibility layer enabling Google's official Antigravity CLI (`agy`) to execute natively inside Acode's built-in Alpine Linux terminal on Android ARM64.**
+> **A production-quality open-source installer and isolated compatibility layer enabling Google's official Antigravity CLI (`agy`) to run natively inside Acode's built-in Alpine Linux terminal on Android ARM64.**
 
 ---
 
-## ONE COMMAND INSTALLATION
+## ONE-COMMAND INSTALLATION
 
 Open your **Acode Terminal** and run:
 
@@ -19,27 +19,60 @@ curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/in
 
 ---
 
-## QUICK USAGE
+## FIRST-RUN & USAGE GUIDE
 
+### 1. First-Run Setup (`agy-setup`)
+Run the interactive setup helper to verify runtime health and launch Google authentication:
 ```sh
-# Check installed version
-agy --version
+agy-setup
+```
 
-# List available models (network API check)
-agy models
-
-# Start interactive Antigravity CLI
+### 2. Launch Antigravity CLI (`agy`)
+```sh
 agy
+```
 
-# Run system health diagnostics
+### 3. Check Version & Models
+```sh
+agy --version
+agy models
+```
+
+### 4. Health Diagnostics (`agy-doctor`)
+```sh
 agy-doctor
+```
 
-# Update to latest Google release
+### 5. Update to Latest Upstream Release (`agy-update`)
+```sh
 agy-update
+```
 
-# Uninstall
+### 6. Uninstall
+```sh
 curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/uninstall.sh | sh
 ```
+
+---
+
+## PATH UX & CURRENT SHELL SESSION
+
+Child processes (like `install.sh`) cannot modify their parent shell's active environment variables.
+The installer configures persistent PATH in `~/.profile` and `~/.ashrc` for future terminal windows.
+
+To use `agy` immediately in your **current** terminal session:
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+---
+
+## GOOGLE AUTHENTICATION INFORMATION
+
+- Google's official Antigravity CLI requires interactive OAuth authentication with a Google account.
+- **`antigravity-acode` NEVER bypasses, stores, or automates authentication.**
+- Running `agy` or `agy-setup` presents Google's official sign-in link.
+- Credentials remain managed 100% natively by Google's official binary inside `$HOME/.config/antigravity`.
 
 ---
 
@@ -55,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/un
 
 ---
 
-## ARCHITECTURE & SECURITY CONTROLS
+## SECURITY & ARCHITECTURE CONTROLS
 
 ```
 Android OS (ARM64)
@@ -71,10 +104,9 @@ Official Google Antigravity CLI binary
 agy
 ```
 
-- **Mandatory SHA-512 Verification**: Both the Google release binary tarball and the Debian glibc dynamic runtime package are verified against SHA-512 cryptographic checksums prior to extraction.
+- **Mandatory Cryptographic Verification**: Google's binary tarball and Debian's core glibc package are verified against SHA-512 checksums prior to extraction.
 - **Strict HTTPS Download Policy**: All external downloads enforce TLS 1.2+ HTTPS (`https://`). Unencrypted HTTP downloads are rejected.
-- **Atomic Updates & Fallback**: `update.sh` stages candidate updates, verifies candidate execution via glibc, creates an atomic backup (`antigravity.bak`), and automatically rolls back if verification fails.
-- **Zero Token Storage**: Does not intercept, modify, or store authentication tokens. All auth logic is managed natively by Google's official binary at `$HOME/.config/antigravity`.
+- **Staging & Safe Rollback**: `update.sh` stages candidate binaries in private `700` directories, tests candidate execution via glibc, creates atomic backups (`antigravity.bak`), and automatically rolls back if validation fails.
 
 ---
 

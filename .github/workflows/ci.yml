@@ -1,4 +1,4 @@
-name: CI & Integrity Checks
+name: CI & Security Verification
 
 on:
   push:
@@ -20,8 +20,10 @@ jobs:
           sh -n uninstall.sh
           sh -n bin/agy-doctor
           sh -n bin/agy-update
+          sh -n bin/agy-setup
           sh -n tests/test_security.sh
           sh -n tests/test_adversarial.sh
+          sh -n tests/test_setup.sh
           sh -n tests/run_tests.sh
 
       - name: Assert No Large Binaries Committed
@@ -35,7 +37,7 @@ jobs:
           fi
           echo "✓ No large binaries found in repository."
 
-      - name: Assert Repository Structure
+      - name: Assert Repository Structure & Executable Modes
         run: |
           test -f README.md
           test -f install.sh
@@ -46,9 +48,35 @@ jobs:
           test -f .gitignore
           test -f bin/agy-doctor
           test -f bin/agy-update
+          test -f bin/agy-setup
           echo "✓ Repository structure verified."
 
-      - name: Run Unit Tests
+      - name: Run Unit & Security Test Suite
         run: |
-          chmod +x tests/run_tests.sh tests/*.sh
+          chmod +x tests/*.sh bin/* install.sh update.sh uninstall.sh
           ./tests/run_tests.sh
+
+  alpine_container_check:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install POSIX Test Dependencies in Alpine
+        run: |
+          apk add --no-cache curl wget tar coreutils
+
+      - name: Run POSIX Syntax & Security Checks inside Alpine Linux
+        run: |
+          sh -n install.sh
+          sh -n update.sh
+          sh -n uninstall.sh
+          sh -n bin/agy-doctor
+          sh -n bin/agy-update
+          sh -n bin/agy-setup
+          sh -n tests/test_security.sh
+          sh -n tests/test_adversarial.sh
+          sh -n tests/test_setup.sh
+          sh -n tests/run_tests.sh

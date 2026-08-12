@@ -19,6 +19,7 @@ echo "Removing executable launcher and management tools..."
 rm -f "${LOCAL_BIN}/agy" 2>/dev/null || true
 rm -f "${LOCAL_BIN}/agy-doctor" 2>/dev/null || true
 rm -f "${LOCAL_BIN}/agy-update" 2>/dev/null || true
+rm -f "${LOCAL_BIN}/agy-setup" 2>/dev/null || true
 
 echo "✓ Uninstallation complete."
 echo "Note: User configuration and Google authentication credentials at \$HOME/.config/antigravity were preserved."

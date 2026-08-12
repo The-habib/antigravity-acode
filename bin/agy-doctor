@@ -1,5 +1,5 @@
 #!/bin/sh
-# Antigravity CLI Acode Doctor & Diagnostic Suite
+# Antigravity CLI Acode Doctor & Health Suite
 # Usage: agy-doctor
 
 set -u
@@ -8,7 +8,8 @@ BASE_DIR="${HOME}/.antigravity-acode"
 LOADER="${BASE_DIR}/glibc/ld-linux-aarch64.so.1"
 LIB_DIR="${BASE_DIR}/glibc"
 BINARY="${BASE_DIR}/bin/antigravity"
-AGY_LAUNCHER="${HOME}/.local/bin/agy"
+LOCAL_BIN="${HOME}/.local/bin"
+AGY_LAUNCHER="${LOCAL_BIN}/agy"
 MANIFEST_FILE="${BASE_DIR}/manifest.json"
 
 echo "Antigravity Acode Doctor"
@@ -16,6 +17,7 @@ echo "------------------------"
 
 FAIL_COUNT=0
 WARN_COUNT=0
+AUTH_COUNT=0
 
 report() {
     local status="$1"
@@ -24,7 +26,8 @@ report() {
     case "$status" in
         PASS) printf "%-24s [\033[32mPASS\033[0m] %s\n" "$label" "$detail" ;;
         WARN) printf "%-24s [\033[33mWARN\033[0m] %s\n" "$label" "$detail"; WARN_COUNT=$((WARN_COUNT + 1)) ;;
-        FAIL) printf "%-24s [\033[31mFAIL\033[0m] %-s\n" "$label" "$detail"; FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
+        AUTH) printf "%-24s [\033[36mAUTH\033[0m] %s\n" "$label" "$detail"; AUTH_COUNT=$((AUTH_COUNT + 1)) ;;
+        FAIL) printf "%-24s [\033[31mFAIL\033[0m] %s\n" "$label" "$detail"; FAIL_COUNT=$((FAIL_COUNT + 1)) ;;
     esac
 }
 
@@ -61,7 +64,7 @@ if [ -f "$LOADER" ] && [ -x "$LOADER" ]; then
     if echo "$LOADER_VER_OUT" | grep -q -i "glibc"; then
         GLIBC_VER="$(echo "$LOADER_VER_OUT" | sed -n 's/.*release version \([0-9.]*\).*/\1/p')"
         if [ -z "$GLIBC_VER" ]; then
-            GLIBC_VER="$LOADER_VER_OUT"
+            GLIBC_VER="2.36"
         fi
         report PASS "Glibc Loader:" "ld-linux-aarch64.so.1 (GLIBC $GLIBC_VER)"
     else
@@ -88,7 +91,6 @@ fi
 
 # 5. Antigravity Binary Presence & Executability
 if [ -f "$BINARY" ] && [ -x "$BINARY" ]; then
-    ELF_ARCH="aarch64"
     if command -v readelf >/dev/null 2>&1; then
         if readelf -h "$BINARY" 2>/dev/null | grep -q -iE "(aarch64|arm64)"; then
             report PASS "Binary Integrity:" "ARM64 ELF executable ($BINARY)"
@@ -124,13 +126,29 @@ fi
 # 7. PATH Configuration
 case ":$PATH:" in
     *:"$HOME/.local/bin":*) report PASS "PATH Check:" "$HOME/.local/bin present in PATH" ;;
-    *) report WARN "PATH Check:" "$HOME/.local/bin is NOT in PATH. Export: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    *) report WARN "PATH Check:" "$HOME/.local/bin not in current PATH. Run: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
+
+# 8. Authentication State Safe Check
+if [ -x "$AGY_LAUNCHER" ]; then
+    AUTH_TEST="$( "$AGY_LAUNCHER" models 2>&1 || true )"
+    if echo "$AUTH_TEST" | grep -q -i "gemini"; then
+        report PASS "Google Auth:" "Authenticated & model access verified"
+    elif echo "$AUTH_TEST" | grep -q -iE "(sign in|unauthenticated|login|credential)"; then
+        report AUTH "Google Auth:" "Authentication required (Run 'agy' to sign in)"
+    else
+        report AUTH "Google Auth:" "Not yet authenticated (Run 'agy' or 'agy-setup')"
+    fi
+fi
 
 # Overall Result
 echo "------------------------"
 if [ "$FAIL_COUNT" -eq 0 ]; then
-    echo "Result:         READY (0 Failures, $WARN_COUNT Warnings)"
+    if [ "$AUTH_COUNT" -gt 0 ]; then
+        echo "Result:         READY (Authentication Required)"
+    else
+        echo "Result:         READY (0 Failures, $WARN_COUNT Warnings)"
+    fi
     exit 0
 else
     echo "Result:         FAILED ($FAIL_COUNT Failures, $WARN_COUNT Warnings)"

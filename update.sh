@@ -105,7 +105,7 @@ echo "Current Installed Version: $CURRENT_VER"
 
 echo "Querying Google Antigravity release server..."
 STAGING_DIR="${BASE_DIR}/update_staging_$$"
-mkdir -p "$STAGING_DIR"
+mkdir -m 700 -p "$STAGING_DIR"
 
 cleanup_staging() {
     rm -rf "$STAGING_DIR" 2>/dev/null || true
