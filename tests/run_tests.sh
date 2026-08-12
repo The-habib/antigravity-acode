@@ -31,7 +31,8 @@ run_test "2. Installer Syntax Test" "$BASE_DIR/tests/test_installer.sh"
 run_test "3. Security & HTTPS Enforcement Test" "$BASE_DIR/tests/test_security.sh"
 run_test "4. Adversarial Security & Safety Test Suite" "$BASE_DIR/tests/test_adversarial.sh"
 run_test "5. Setup Script Verification" "$BASE_DIR/tests/test_setup.sh"
-run_test "6. Launcher Execution Test" "$BASE_DIR/tests/test_launcher.sh"
+run_test "6. Host Utility Bootstrapping Test" "$BASE_DIR/tests/test_bootstrap.sh"
+run_test "7. Launcher Execution Test" "$BASE_DIR/tests/test_launcher.sh"
 
 echo "========================================================="
 if [ "$FAIL_COUNT" -eq 0 ]; then

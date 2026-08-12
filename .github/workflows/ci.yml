@@ -24,6 +24,7 @@ jobs:
           sh -n tests/test_security.sh
           sh -n tests/test_adversarial.sh
           sh -n tests/test_setup.sh
+          sh -n tests/test_bootstrap.sh
           sh -n tests/run_tests.sh
 
       - name: Assert No Large Binaries Committed

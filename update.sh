@@ -92,6 +92,35 @@ verify_sha512() {
     echo "✓ Package SHA-512 checksum verified successfully."
 }
 
+bootstrap_pkg() {
+    local util_name="$1"
+    local pkg_name="$2"
+    local check_cmd="$3"
+
+    if eval "$check_cmd" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "[BOOTSTRAP] $util_name is required for update processing."
+    if command -v apk >/dev/null 2>&1; then
+        echo "[BOOTSTRAP] Installing Alpine package: $pkg_name..."
+        if apk add --no-cache "$pkg_name" >/dev/null 2>&1 || apk add "$pkg_name"; then
+            if eval "$check_cmd" >/dev/null 2>&1; then
+                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
+                return 0
+            fi
+        fi
+        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
+        exit 1
+    else
+        echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
+        echo "Please manually install '$pkg_name' (e.g., apk add $pkg_name)." >&2
+        exit 1
+    fi
+}
+
+bootstrap_pkg "tar" "tar" "command -v tar"
+
 if [ ! -f "${BIN_DIR}/antigravity" ]; then
     echo "Error: Antigravity is not currently installed. Run install.sh first." >&2
     exit 1

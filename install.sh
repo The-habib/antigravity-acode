@@ -122,6 +122,41 @@ validate_arm64_elf() {
     return 0
 }
 
+# Helper: Host Utility Bootstrapper for Minimal Alpine Environments
+bootstrap_pkg() {
+    local util_name="$1"
+    local pkg_name="$2"
+    local check_cmd="$3"
+
+    if eval "$check_cmd" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "[BOOTSTRAP] $util_name is required to extract system packages."
+    if command -v apk >/dev/null 2>&1; then
+        echo "[BOOTSTRAP] Installing Alpine package: $pkg_name..."
+        if apk add --no-cache "$pkg_name" >/dev/null 2>&1 || apk add "$pkg_name"; then
+            if eval "$check_cmd" >/dev/null 2>&1; then
+                echo "✓ Utility '$util_name' installed successfully via $pkg_name."
+                return 0
+            fi
+        fi
+        echo "Fatal Error: Installed Alpine package '$pkg_name', but '$util_name' remains unavailable." >&2
+        exit 1
+    else
+        echo "Fatal Error: Required utility '$util_name' is missing and 'apk' package manager is unavailable." >&2
+        echo "Please manually install '$pkg_name' (e.g., apk add $pkg_name)." >&2
+        exit 1
+    fi
+}
+
+# 0. Host Utility Audit & Bootstrapping
+echo "[0/7] Auditing required host utilities..."
+bootstrap_pkg "ar" "binutils" "command -v ar || command -v dpkg-deb"
+bootstrap_pkg "xz" "xz" "command -v unxz || command -v xz || tar --help 2>&1 | grep -q xz"
+bootstrap_pkg "tar" "tar" "command -v tar"
+echo "✓ Required host utilities verified."
+
 # 1. Architecture Detection
 echo "[1/7] Detecting system architecture..."
 ARCH_RAW="$(uname -m 2>/dev/null || echo "unknown")"

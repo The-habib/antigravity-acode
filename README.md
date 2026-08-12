@@ -11,11 +11,17 @@
 
 ## ONE-COMMAND INSTALLATION
 
-Open your **Acode Terminal** and run:
+If your fresh Alpine terminal does not have `curl` installed yet, run:
+```sh
+apk add curl
+```
 
+Then run the canonical installer:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/The-habib/antigravity-acode/main/install.sh | sh
 ```
+
+> **Automatic Host Utility Bootstrapping**: Once `install.sh` starts, it automatically audits and self-bootstraps missing required host tools (such as `binutils`/`ar` and `xz`) via `apk` if needed.
 
 ---
 
